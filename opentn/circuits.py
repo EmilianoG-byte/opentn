@@ -2,6 +2,8 @@ import numpy as np
 import pytenet as ptn
 from pprint import pprint
 import qutip as qt
+from opentn.states import up, down, plus, minus, I, X, get_ladder_operator
+from scipy.linalg import expm
 
 # implementing the partial trace function
 def partial_trace(rho: np.array, dimA: int, dimB: int) -> tuple:
@@ -34,13 +36,14 @@ def partial_trace(rho: np.array, dimA: int, dimB: int) -> tuple:
     return (rhoA, rhoB)
 
 
-def quantum_circuit(initial_state:list[np.array], U: np.array) -> tuple[np.array]:
+def quantum_circuit(initial_state:list[np.ndarray], U: np.ndarray) -> tuple[np.array]:
     """
     Compute the reduced density matrix of each individual qubit coming from the full density matrix rho_PE^out 
     after a quantum circuit acts on full system 
 
     Update: I am allowing to pass a whole single state_pe = density matrix of full state
     Old: state_phy:np.array, state_env:np.array,
+
     args:
     ---------
     (*new*)
@@ -92,3 +95,77 @@ def quantum_circuit(initial_state:list[np.array], U: np.array) -> tuple[np.array
 
     rhoP, rhoE = partial_trace(rho_out, dimA, dimB)    
     return rhoP, rhoE
+
+def get_unitary_adchannel(theta:float=None, gamma:float=None, get_theta=False):
+    """
+    compute the unitary of the circuit acting on 2-qubits corresponding to the amplitude damping channel
+
+    Schematic:
+    rho_A -----( )-----------(x)---------
+                |             |
+                |             |
+    rho_E -----[Ry(\theta)]--( )--------- [MEASURE]
+
+    \gamma = \sin(\theta\2)^2
+    
+    args:
+    ---------
+    theta: Optional(float)
+        Angle of Ry rotation.
+    gamma: Optional(float)
+        "Probability" of noise parameter. Must be in interval [0,1]
+    get_theta: Optional(Bool)
+        If True, returns the theta for debugging
+    returns:
+    ---------
+    U: np.ndarray
+        unitary operator of amplitude damping channel
+    """
+    if theta:
+        gamma = np.sin(theta/2)^2
+    elif gamma:
+        theta = 2*np.arcsin(np.sqrt(gamma)) 
+    else:
+        raise ValueError('must provide either theta or gamma')
+
+    ry = np.array([
+    [np.sqrt(1-gamma), -np.sqrt(gamma)],
+    [np.sqrt(gamma), np.sqrt(1-gamma)]
+                ], dtype=np.complex128)
+
+    cry = np.kron(np.outer(up,up),I) + np.kron(np.outer(down,down),ry)
+    cnot_inverse = np.kron(I, np.outer(up,up)) + np.kron(X, np.outer(down,down))
+
+    U = cnot_inverse@cry
+
+    if get_theta:
+        return U, theta
+    else:
+        return U
+
+def get_unitary_beamsplitter(theta:float=None, gamma:float=None)->np.ndarray:
+    """
+    See Nielsen and chuang page 291 for an explanation.
+    args:
+    ---------
+    theta: Optional(float)
+        Angle of Ry rotation.
+    gamma: Optional(float)
+        "Probability" of noise parameter. Must be in interval [0,1]
+    returns:
+    ---------
+    U: np.ndarray
+        unitary operator of beamsplitter (amplitude damping channel)
+    """
+    if theta:
+        gamma = np.sin(theta/2)^2
+    elif gamma:
+        theta = np.arcsin(np.sqrt(gamma)) 
+    else:
+        raise ValueError('must provide either theta or gamma')
+
+    a = get_ladder_operator(num_levels=2)
+    b = get_ladder_operator(num_levels=2)
+
+    U = expm(theta*(np.kron(b,a.conj().T) - np.kron(b.conj().T,a)))
+    return U
