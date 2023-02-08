@@ -5,11 +5,9 @@ import numpy as np
 # define a pure state. note: need to define complex for latter use of += operation.
 up = np.array([[1,0]], dtype=np.complex128).T
 down = np.array([[0,1]], dtype=np.complex128).T
-
 # same for |+> and |-> states
 plus = (up + down)/np.sqrt(2)
 minus = (up - down)/np.sqrt(2)
-
 
 #matrices
 I = np.eye(2, dtype=np.complex128)
@@ -59,3 +57,16 @@ def convert_to_comp_basis(U:np.ndarray, num_levels:int, env_first:bool=False) ->
         U_comp_basis = np.array([element[[0,1,num_levels, num_levels+1]] for element in U[[0,1,num_levels, num_levels+1]]])
 
     return U_comp_basis
+
+
+# import qutip as qt
+# # defining the |0> and |1> for facility. same for |+> and |-> states
+# up = qt.basis(2,1)
+# down = qt.basis(2,0)
+# plus =  (up + down).unit()
+# minus = (up - down).unit()
+# #matrices
+# I = qt.qeye(2)
+# X = qt.sigmax()
+# Z = qt.sigmaz()
+# Y = qt.sigmay()

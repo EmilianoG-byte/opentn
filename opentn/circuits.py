@@ -2,7 +2,7 @@ import numpy as np
 import pytenet as ptn
 from pprint import pprint
 import qutip as qt
-from opentn.states import up, down, plus, minus, I, X, get_ladder_operator
+from opentn.states.qubits import up, down, plus, minus, I, X, get_ladder_operator
 from scipy.linalg import expm
 
 # implementing the partial trace function
@@ -121,9 +121,9 @@ def get_unitary_adchannel(theta:float=None, gamma:float=None, get_theta=False):
     U: np.ndarray
         unitary operator of amplitude damping channel
     """
-    if theta:
+    if theta is not None:
         gamma = np.sin(theta/2)^2
-    elif gamma:
+    elif gamma is not None:
         theta = 2*np.arcsin(np.sqrt(gamma)) 
     else:
         raise ValueError('must provide either theta or gamma')

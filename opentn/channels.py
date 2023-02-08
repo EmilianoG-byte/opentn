@@ -2,7 +2,7 @@ import numpy as np
 import pytenet as ptn
 from pprint import pprint
 import qutip as qt
-from .states import up, down, plus, minus, I
+from opentn.states.qubits import up, down, plus, minus, I
 
 def quantum_channel(state:np.ndarray, krauss_list: list[np.ndarray]) -> np.ndarray:
     """

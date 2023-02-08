@@ -168,7 +168,8 @@ class MPS():
 class MPO():
 
     """
-    Matrix Product Operators for the representation of operators acting on MPS objects
+    Matrix Product Operators for the representation of operators acting on MPS objects.
+    Update: This class will also be used now to represent the purified stuctures, due to their similarities with MPO.
 
     Conventions of legs as stated in the beginning of file
 
@@ -189,12 +190,35 @@ class MPO():
     An instance of the MPO class
     """
 
-    def __init__(self, Ws: list[np.array])-> None:
+    def __init__(self, Ws: list[np.ndarray])-> None:
         self.Ws = Ws
         self.num_sites = len(Ws)
 
     def __repr__(self) -> str:
-        return  '(%r)' %self.Ws
+        return  f'MPO: ({self.Ws}) with dims {self.Ws[0].shape}' 
+
+    
+    def contract_purified_krauss(self, krauss_list: list[np.ndarray]):
+        "Modifies in place the Ws of MPO object for purified object and krauss list"
+        krauss_tensor = np.stack(krauss_list, axis=0) # len(krauss_list):= s, n_u, n_d 
+        # TODO: generalize this for multiple sites using a for lop
+        A_cont = np.tensordot(self.Ws[0], krauss_tensor, axes=(2, -1)) # vL vR (n) m, s n_u (n_d)-> vL vR m s n_u
+        A_shape = A_cont.shape
+        A_cont = np.reshape(A_cont, newshape=(A_shape[0], A_shape[1], A_shape[2]*A_shape[3], A_shape[4])) # vL vR (m s) n_u
+        A_cont = np.transpose(A_cont, axes=(0,1,3,2)) # vL vR n_u (ms)
+        # update the Ws in place
+        self.Ws[0] = A_cont
+
+    def get_density_from_mpo(self)->np.ndarray:
+        r"""
+        Uses the Ws from MPO class to get the density operator corresponding to
+            \rho = Ws x Ws^* 
+        """
+        # TODO: generalize this for multiple sites using a for lop
+        rho = np.tensordot(self.Ws[0], self.Ws[0].conj(), axes=(-1,-1)) # vL vR n (m), vL* vR* n* (m*) -> vL vR n vL* vR* n*
+        return np.squeeze(rho) # n n*. Trace out vL and vR since they have dim 1
+
+
 
 
     #TODO: change this method to not change tensor in place
@@ -270,7 +294,7 @@ def quantum_mpo_mps(mps:MPS, mpo:MPO) -> tuple[np.array]:
 
     Assumed order of each tensor in mps: vL i vR      == virtual out, physical, virtual in
     Assumed order of each tensor in mpo: vL, vR, i, j == virtual_out, virtual_in, physical_in, physical_out
-
+    NOTE: this method makes no sense. I am literally going back to having a matrix representation. 
     args:
     ---------
     mps: 'MPS'
