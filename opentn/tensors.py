@@ -166,7 +166,6 @@ class MPS():
 
 
 class MPO():
-
     """
     Matrix Product Operators for the representation of operators acting on MPS objects.
     Update: This class will also be used now to represent the purified stuctures, due to their similarities with MPO.
@@ -189,105 +188,127 @@ class MPO():
     ---------
     An instance of the MPO class
     """
-
     def __init__(self, Ws: list[np.ndarray])-> None:
         self.Ws = Ws
-        self.num_sites = len(Ws)
 
     def __repr__(self) -> str:
         return  f'MPO: ({self.Ws}) with dims {self.Ws[0].shape}' 
 
-    
-    def contract_purified_krauss(self, krauss_list: list[np.ndarray]):
-        "Modifies in place the Ws of MPO object for purified object and krauss list"
-        krauss_tensor = np.stack(krauss_list, axis=0) # len(krauss_list):= s, n_u, n_d 
-        # TODO: generalize this for multiple sites using a for lop
-        A_cont = np.tensordot(self.Ws[0], krauss_tensor, axes=(2, -1)) # vL vR (n) m, s n_u (n_d)-> vL vR m s n_u
-        A_shape = A_cont.shape
-        A_cont = np.reshape(A_cont, newshape=(A_shape[0], A_shape[1], A_shape[2]*A_shape[3], A_shape[4])) # vL vR (m s) n_u
-        A_cont = np.transpose(A_cont, axes=(0,1,3,2)) # vL vR n_u (ms)
-        # update the Ws in place
-        self.Ws[0] = A_cont
+    @property
+    def num_sites(self):
+        """Number of lattice sites."""
+        return len(self.Ws)
 
-    def get_density_from_mpo(self)->np.ndarray:
-        r"""
-        Uses the Ws from MPO class to get the density operator corresponding to
-            \rho = Ws x Ws^* 
+    @classmethod
+    def create_purified(cls, phys_state:list[np.ndarray]):
         """
-        # TODO: generalize this for multiple sites using a for lop
-        rho = np.tensordot(self.Ws[0], self.Ws[0].conj(), axes=(-1,-1)) # vL vR n (m), vL* vR* n* (m*) -> vL vR n vL* vR* n*
-        return np.squeeze(rho) # n n*. Trace out vL and vR since they have dim 1
+        Create an instance of the MPO representing the purified state corresponding 
+        to the list of states of the physical system. Environment is assumed to be 
+        in zero state.
 
-
-
-
-    #TODO: change this method to not change tensor in place
-    def merge_mpo_tensor_pair(self, merge=True)->None:
-        """
-        Contract two MPO tensors over one shared leg.  If merge=True, merge physical legs to obtain a valid rank-4 MPO
-        Assumed order:  vL, vR, i, j == virtual_out, virtual_in, physical_in, physical_out
-
-        #TODO: update so that it can contract any two adjacent tensors or even all tensors
         args:
         ---------
-        merge: 'bool'
-            if True. merges physical legs, else, leaves them dangling
+        phys_state: 'list[np.ndarray]'
+            list of tensors representing the physical system at each site.
+            This works correctly only if the physical state is in a pure state
 
         returns:
         -----------
-            None
-
+            instance of the MPO class
         """
-        tempWs = np.tensordot(self.Ws[0], self.Ws[1], (1, 0)) #vL0 (vR0) i0 j0, (vL1) vR1 i1 j1 -> vL0 i0 j0 vR1 i1 j1
-        # get back virtual dimensions to the front and input and output dimensions next to each other
-        tempWs = np.transpose(tempWs, (0, 3, 1, 4, 2, 5))  # vL0 vR1 i0 i1 j0 j1
-        
-        if merge:
-            # combine original physical dimensions
-            tempWs = tempWs.reshape((tempWs.shape[0], tempWs.shape[1], tempWs.shape[2]*tempWs.shape[3], tempWs.shape[4]*tempWs.shape[5])) #-> vL0 vR1 i0xi1 j0xj1 
-        
-        self.Ws = tempWs
-        self.num_sites = 1
+        Ws = []
+        for init_state in phys_state:
+            phys_init = init_state
+            a,b = phys_init
+            W = np.zeros(shape=(1,1,2,1),dtype=np.complex128) #vL vR up down. Assuming environment is by default zero
+            W[:,:,0,:] = a
+            W[:,:,1,:] = b
+            Ws.append(W)
 
-    @staticmethod
-    def mpo_to_full_tensor(Alist, matrix=True):
+        return cls(Ws)
+    
+    def apply_krauss_operators(self, krauss_list: list[np.ndarray], idx: int = 0):
+        "Modifies in place the Ws of MPO object for purified object and krauss list"
+        krauss_tensor = np.stack(krauss_list, axis=0) # len(krauss_list):= s, n_u, n_d 
+        W_new = np.tensordot(self.Ws[idx], krauss_tensor, axes=(2, -1)) # vL vR (n) m, s n_u (n_d)-> vL vR m s n_u
+        shape = W_new.shape
+        W_new = np.reshape(W_new, newshape=(shape[0], shape[1], shape[2]*shape[3], shape[4])) # vL vR (m s) n_u
+        W_new = np.transpose(W_new, axes=(0,1,3,2)) # vL vR n_u (ms)
+        # update the Ws in place
+        self.Ws[idx] = W_new
+
+    def get_density_mpo(self):
+        r"""
+        Uses the Ws from MPO object to generate a new tensor at each site corresponding to
+            rho_ws[i] = Ws[i] x Ws[i]^* 
+        return an MPO instance
         """
-        Construct the full tensor corresponding to the MPO tensors `Alist` (Ws for MPO object).
-
-        The i-th MPO tensor Alist[i] is expected to have dimensions (vL[i], vR[i], n[i], m[i+1]),
-        
-        The returned tensor has dimensions (n[0] x ... x n[L-1]) x (m[0] x ... x m[L-1]) -> rank 2
-
-        #current convetion m(in) n(out) Di(left) Di+1(right)
-        #new convention Di(left) Di+1(right) m(in) n(out)
-
-
-        Note: Should only be used for debugging and testing.
+        rho_ws = []
+        for W in self.Ws:
+            rho = np.tensordot(W, W.conj(), axes=(-1,-1)) # vL vR n (m), vL* vR* n* (m*) -> vL vR n vL* vR* n*
+            rho = np.transpose(rho, axes=(0,3,1,4,2,5)) # vL vL* vR vR* n n*
+            shape = rho.shape
+            rho_ws.append(np.reshape(rho, newshape=(shape[0]*shape[1], shape[2]*shape[3], shape[4], shape[5])))
+        # here is where I would call the function that returns a density matrix
+        return MPO(rho_ws)
+        # return np.squeeze(rho_ws) # n n*. Trace out vL and vR since they have dim 1
+    def get_density_matrix(self)->np.ndarray:
         """
-        #TODO implement this properly. Define a new function that merges two tensors together
-        # L = len(Alist)
-        # # consistency check
-        # assert Alist[0].ndim == 4
-        # # use leftmost virtual bond as first dimension
-        # T = Alist[0]
-        # # contract virtual bonds
-        # for i in range(1, L):
-        #     T = np.tensordot(T, Alist[i], axes=(1, 0)) # -> vL[0] n[0] m[0] n[1] m[1] vR[1]
-        #     T = np.transpose(T, axes=())
-        # # contract leftmost and rightmost virtual bond (has no influence if these virtual bond dimensions are 1)
-        # assert T.shape[0] == T.shape[-1]
-        # T = np.trace(T, axis1=0, axis2=-1)
-        # # now T has dimensions m[0] x n[0] x m[1] x n[1] ... m[d-1] x n[d-1];
-        # # as last step, we group the `m` dimensions together, and likewise the `n` dimensions
-        # T = np.transpose(T, list(range(0, T.ndim, 2)) + list(range(1, T.ndim, 2)))
+        Get the matrix in the full Hilbert space from the density matrix representation of the MPO instance
+        """
+        dm_mpo = self.get_density_mpo()
+        return dm_mpo.get_full_matrix()
 
-        # #converting to full matrix if matrix=True
-        # if matrix:
-        #     m = np.prod(T.shape[:L])
-        #     n = np.prod(T.shape[L:])
-        #     T = T.reshape((m,n))
-        # return T
+    def get_full_matrix(self)->np.ndarray:
+        """
+        Get the matrix in the full hilbert space corresponding to the chain of MPO's in Ws
+        """
+        op = self.Ws[0]
+        for i in range(1, len(self.Ws)):
+            op = merge_mpo_tensor_pair(op, self.Ws[i])
+        assert op.ndim == 4
+        # contract leftmost and rightmost virtual bond (has no influence if these virtual bond dimensions are 1)
+        op = np.trace(op, axis1=0, axis2=1)
+        return op
 
+    def get_partial_density(self, idx:int=0):
+        " trace MPO over all the sites except the one selected"
+        dm_mpo = self.get_density_mpo()
+        # NOTE: i should take into account that idx cant be 3 different cases
+        # 1- first one (0)
+        # 2- somewhere in middle (i)
+        # 3- last one (-1)
+        ML = np.eye(1, dtype=np.complex128)
+        MR = np.eye(1, dtype=np.complex128)
+        # generate the left anf right matrices to contract with P^idx
+        for i, P in enumerate(dm_mpo.Ws):
+            if i != idx:
+                P = np.trace(P, axis1=2, axis2=3) # vL vR (n) (m) -> vL vR
+                if i < idx:
+                    ML = ML@P
+                elif i > idx:
+                    MR = MR@P
+        # contract ML and MR with P^idx
+        DM = np.tensordot(ML, dm_mpo.Ws[idx], axes=(1,0)) # vL (vR), (vL) vR n m -> vL vR n m
+        DM = np.tensordot(DM, MR, axes=(1,0)) #vL (vR) n m, (vL) vR -> vL n m vR
+        # vL and vR should have dimension 1
+        DM = np.squeeze(DM)
+        assert DM.ndim == 2
+        return DM
+
+# TODO: Should I move this to a utility file?
+def merge_mpo_tensor_pair(A0, A1):
+    """
+    Merge two neighboring MPO tensors.
+    """
+    A = np.tensordot(A0, A1, (1, 0)) # vL0 (vR0) n0 m0, (vL1) vR1 n1 m1 -> vL0 n0 m0 vR1 n1 m1
+    # pair original physical dimensions of A0 and A1
+    A = np.transpose(A, (0, 3, 1, 4, 2, 5)) # vL0 vR1 n0 n1 m0 m1
+    # combine original physical dimensions
+    A = A.reshape((A.shape[0], A.shape[1], A.shape[2]*A.shape[3], A.shape[4]*A.shape[5]))
+    return A
+
+# NOTE: deprecated method
 def quantum_mpo_mps(mps:MPS, mpo:MPO) -> tuple[np.array]:
     """
     Compute reduced density matrices for physical and environment systems given the mps and mpo.
