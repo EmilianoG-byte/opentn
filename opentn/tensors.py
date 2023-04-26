@@ -199,6 +199,33 @@ class MPO():
         """Number of lattice sites."""
         return len(self.Ws)
 
+        # return np.squeeze(rho_ws) # n n*. Trace out vL and vR since they have dim 1
+    def get_density_matrix(self)->np.ndarray:
+        """
+        Get the matrix in the full Hilbert space from the density matrix representation of the MPO instance
+        """
+        return self.get_full_matrix()
+
+    def get_full_matrix(self)->np.ndarray:
+        """
+        Get the matrix in the full hilbert space corresponding to the chain of MPO's in Ws
+        """
+        op = self.Ws[0]
+        for i in range(1, len(self.Ws)):
+            op = merge_mpo_tensor_pair(op, self.Ws[i])
+        assert op.ndim == 4
+        # contract leftmost and rightmost virtual bond (has no influence if these virtual bond dimensions are 1)
+        op = np.trace(op, axis1=0, axis2=1)
+        return op
+
+
+class MPOP(MPO):
+    def __init__(self, Ws: list[np.ndarray])-> None:
+        super().__init__(Ws=Ws)
+
+    def __repr__(self) -> str:
+        return  f'MPO: ({self.Ws}) with dims {self.Ws[0].shape}' 
+
     @classmethod
     def create_purified(cls, phys_state:list[np.ndarray]):
         """
@@ -251,26 +278,14 @@ class MPO():
             rho_ws.append(np.reshape(rho, newshape=(shape[0]*shape[1], shape[2]*shape[3], shape[4], shape[5])))
         # here is where I would call the function that returns a density matrix
         return MPO(rho_ws)
-        # return np.squeeze(rho_ws) # n n*. Trace out vL and vR since they have dim 1
+    
     def get_density_matrix(self)->np.ndarray:
         """
         Get the matrix in the full Hilbert space from the density matrix representation of the MPO instance
         """
         dm_mpo = self.get_density_mpo()
         return dm_mpo.get_full_matrix()
-
-    def get_full_matrix(self)->np.ndarray:
-        """
-        Get the matrix in the full hilbert space corresponding to the chain of MPO's in Ws
-        """
-        op = self.Ws[0]
-        for i in range(1, len(self.Ws)):
-            op = merge_mpo_tensor_pair(op, self.Ws[i])
-        assert op.ndim == 4
-        # contract leftmost and rightmost virtual bond (has no influence if these virtual bond dimensions are 1)
-        op = np.trace(op, axis1=0, axis2=1)
-        return op
-
+    
     def get_partial_density(self, idx:int=0):
         " trace MPO over all the sites except the one selected"
         dm_mpo = self.get_density_mpo()
@@ -278,16 +293,24 @@ class MPO():
         # 1- first one (0)
         # 2- somewhere in middle (i)
         # 3- last one (-1)
-        ML = np.eye(1, dtype=np.complex128)
-        MR = np.eye(1, dtype=np.complex128)
-        # generate the left anf right matrices to contract with P^idx
-        for i, P in enumerate(dm_mpo.Ws):
+        vL = dm_mpo.Ws[0].shape[0] # leftmost virtual dimension
+        vR = dm_mpo.Ws[-1].shape[1] # rightmost virtual dimension
+        ML = np.eye(vL) 
+        MR = np.eye(vR) 
+        # generate the left and right matrices to contract with P^idx
+        
+        # loop from 0 to idx-1
+        for i, P in enumerate(dm_mpo.Ws[:idx]):
+            # loop from idx+1 to n-1 
+
             if i != idx:
                 P = np.trace(P, axis1=2, axis2=3) # vL vR (n) (m) -> vL vR
                 if i < idx:
                     ML = ML@P
                 elif i > idx:
                     MR = MR@P
+        
+
         # contract ML and MR with P^idx
         DM = np.tensordot(ML, dm_mpo.Ws[idx], axes=(1,0)) # vL (vR), (vL) vR n m -> vL vR n m
         DM = np.tensordot(DM, MR, axes=(1,0)) #vL (vR) n m, (vL) vR -> vL n m vR
@@ -295,6 +318,7 @@ class MPO():
         DM = np.squeeze(DM)
         assert DM.ndim == 2
         return DM
+
 
 # TODO: Should I move this to a utility file?
 def merge_mpo_tensor_pair(A0, A1):
