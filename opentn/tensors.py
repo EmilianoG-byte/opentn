@@ -1,9 +1,11 @@
 import numpy as np
 import pytenet as ptn
+import copy
 from pprint import pprint
 import qutip as qt
 from .circuits import partial_trace
-
+from scipy.linalg import svd
+from .states.qubits import H, X, Y, Z, I
 
 # my convention for working with tensors will be: vL[i], n[i], vR[i] := A[i]
 # for left, physical, and right leg of the ith tensor in MPS chain, respectively.
@@ -224,7 +226,7 @@ class MPOP(MPO):
         super().__init__(Ws=Ws)
 
     def __repr__(self) -> str:
-        return  f'MPO: ({self.Ws}) with dims {self.Ws[0].shape}' 
+        return  f'MPOP: ({self.Ws}) with dims {self.Ws[0].shape}' 
 
     @classmethod
     def create_purified(cls, phys_state:list[np.ndarray]):
@@ -247,22 +249,73 @@ class MPOP(MPO):
         for init_state in phys_state:
             phys_init = init_state
             a,b = phys_init
-            W = np.zeros(shape=(1,1,2,1),dtype=np.complex128) #vL vR up down. Assuming environment is by default zero
+            W = np.zeros(shape=(1,1,2,1),dtype=complex) #vL vR up down. Assuming environment is by default zero
             W[:,:,0,:] = a
             W[:,:,1,:] = b
             Ws.append(W)
 
         return cls(Ws)
     
-    def apply_krauss_operators(self, krauss_list: list[np.ndarray], idx: int = 0):
-        "Modifies in place the Ws of MPO object for purified object and krauss list"
-        krauss_tensor = np.stack(krauss_list, axis=0) # len(krauss_list):= s, n_u, n_d 
-        W_new = np.tensordot(self.Ws[idx], krauss_tensor, axes=(2, -1)) # vL vR (n) m, s n_u (n_d)-> vL vR m s n_u
+    def apply_local_kraus(self, kraus_list: list[np.ndarray], idx: int = 0):
+        "Modifies in place the Ws of MPO object for purified object and kraus list"
+        kraus_tensor = np.stack(kraus_list, axis=0) # len(kraus_list):= s, n_u, n_d 
+        W_new = np.tensordot(self.Ws[idx], kraus_tensor, axes=(2, -1)) # vL vR (n) m, s n_u (n_d)-> vL vR m s n_u
         shape = W_new.shape
         W_new = np.reshape(W_new, newshape=(shape[0], shape[1], shape[2]*shape[3], shape[4])) # vL vR (m s) n_u
         W_new = np.transpose(W_new, axes=(0,1,3,2)) # vL vR n_u (ms)
         # update the Ws in place
         self.Ws[idx] = W_new
+
+    def apply_nn_kraus(self, kraus_list:list[np.ndarray], idx_list:list = [0,1], dim:int = 2, Ks:list[int] = None, U:np.ndarray = None, inplace:bool = False):
+        "Applies the nearest nieghbour kraus operators to two sites"
+        # first step: stack them to have the kraus dimension back:
+        K = len(kraus_list)
+        kraus_tensor = np.stack(kraus_list, axis=0) # K Sout(l,l+1) Sin(l,l+1)
+        # split into the different sites:
+        kraus_tensor = np.reshape(kraus_tensor, newshape=[K] + [dim]*4)  # K Sout(l) Sout(l+1) Sin(l) Sin(l+1)
+        if U is not None:
+            assert U.shape == (K,K), f"Unitary must have kraus dimension: {K}"
+            # apply a random unoptimizied unitary matrix to the kraus leg to see if it has any effect.
+            kraus_tensor = np.tensordot(U, kraus_tensor, axes=(1,0)) # K (K), (K) Sout(l) Sout(l+1) Sin(l) Sin(l+1) -> K Sout(l) Sout(l+1) Sin(l) Sin(l+1)
+        if not Ks:
+            Ks = [K, 1]
+        # Decide on a splitting of the K dimension. Paper suggests that putting all to one side is not so bad
+        K1, K2 = Ks
+        kraus_tensor = np.reshape(kraus_tensor, newshape=[K1, K2] + [dim]*4)  # K1 K2 Sout(l) Sout(l+1) Sin(l) Sin(l+1)
+        # transpose to have a matrix like later for SVD
+        kraus_tensor = np.transpose(kraus_tensor, axes=(2,0,4,3,1,5)) # Sout(l) K1 Sin(l) Sout(l+1) K2 Sin(l+1) 
+        # reshape into a matrix for svd
+        kraus_matrix = np.reshape(kraus_tensor, newshape=[dim * K1 * dim, dim * K2 * dim]) # (Sout(l) * K1 * Sin(l)) (Sout(l+1) * K2 * Sin(l+1))
+        # perform svd
+        u, s, vh = svd(kraus_matrix, full_matrices=False) # vh: D (Sout(l+1) * K2 * Sin(l+1))
+        # reshape u and vh, and absorv s. Absorb into u for simplicity. D is the 'bond dimension'
+        D = len(s)
+        u_s = u@np.diag(s) # (Sout(l) * K1 * Sin(l)) D
+        Bl = np.reshape(u_s, newshape=[dim, K1, dim, D]) # Sout(l) K1 Sin(l) D
+        Br = np.reshape(vh, newshape=[D, dim, K2, dim]) # D Sout(l+1) K2 Sin(l+1)
+        # Apply it on the nearest neighbours given by index
+        i, j = idx_list
+        assert j == i+1, "idx_list must contain index of two consecutive sites"
+
+        Wi = np.tensordot(self.Ws[i], Bl, axes=(2,2)) # vL vR (s) r, Sout K1 (Sin) D  -> vL vR r Sout K1 D
+        Wi = np.transpose(Wi, axes=(0,1,5,3,4,2)) # vL vR D Sout K1 r 
+        shape = Wi.shape # vL vR D Sout K1 r 
+        Wi = np.reshape(Wi, newshape=(shape[0], shape[1]*shape[2], shape[3], shape[4]*shape[5])) # vL (vR D) Sout (K1 r) 
+
+        Wj = np.tensordot(self.Ws[j], Br, axes=(2,3)) # vL vR (s) r, D Sout K2 (Sin)  -> vL vR r D Sout K2 
+        Wj = np.transpose(Wj, axes=(0,3,1,4,5,2)) # vL D vR Sout K2 r 
+        shape = Wj.shape # vL D vR Sout K2 r 
+        Wj = np.reshape(Wj, newshape=(shape[0]*shape[1], shape[2], shape[3], shape[4]*shape[5])) # (vL D) vR Sout (K2 r)
+
+        if inplace:
+             self.Ws[i] = Wi
+             self.Ws[j] = Wj
+        else:
+            # return a new mpop tensor that has the original Ws except the changed ones
+            Ws_new = copy.deepcopy(self.Ws)
+            Ws_new[i] = Wi
+            Ws_new[j] = Wj
+            return  MPOP(Ws=Ws_new)
 
     def get_density_mpo(self):
         r"""
@@ -295,27 +348,22 @@ class MPOP(MPO):
         # 3- last one (-1)
         vL = dm_mpo.Ws[0].shape[0] # leftmost virtual dimension
         vR = dm_mpo.Ws[-1].shape[1] # rightmost virtual dimension
-        ML = np.eye(vL) 
-        MR = np.eye(vR) 
+        ML = np.eye(vL) # vL, vR
+        MR = np.eye(vR) # vL, vR 
+        
         # generate the left and right matrices to contract with P^idx
-        
-        # loop from 0 to idx-1
-        for i, P in enumerate(dm_mpo.Ws[:idx]):
-            # loop from idx+1 to n-1 
-
-            if i != idx:
-                P = np.trace(P, axis1=2, axis2=3) # vL vR (n) (m) -> vL vR
-                if i < idx:
-                    ML = ML@P
-                elif i > idx:
-                    MR = MR@P
-        
+        for P in dm_mpo.Ws[:idx]:
+            P = np.trace(P, axis1=2, axis2=3) # vL vR (n) (m) -> vL vR
+            ML = ML@P
+        for P in reversed(dm_mpo.Ws[idx+1:]):
+            P = np.trace(P, axis1=2, axis2=3) # vL vR (n) (m) -> vL vR
+            MR = P@MR
 
         # contract ML and MR with P^idx
         DM = np.tensordot(ML, dm_mpo.Ws[idx], axes=(1,0)) # vL (vR), (vL) vR n m -> vL vR n m
         DM = np.tensordot(DM, MR, axes=(1,0)) #vL (vR) n m, (vL) vR -> vL n m vR
         # vL and vR should have dimension 1
-        DM = np.squeeze(DM)
+        DM = np.trace(DM, axis1=0, axis2=-1)
         assert DM.ndim == 2
         return DM
 

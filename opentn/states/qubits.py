@@ -14,6 +14,7 @@ I = np.eye(2, dtype=np.complex128)
 X = np.outer(up,down) + np.outer(down,up)
 Z = np.outer(up,up) - np.outer(down,down)
 Y =  -1j*np.outer(up,down) + 1j*np.outer(down,up)
+H = (1/np.sqrt(2))*np.array([[1,1],[1,-1]], dtype=complex)
 
 def get_ladder_operator(num_levels:int=2, adjoint:bool=False) -> np.ndarray:
     """

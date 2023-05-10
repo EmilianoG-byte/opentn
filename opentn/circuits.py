@@ -4,7 +4,6 @@ from pprint import pprint
 import qutip as qt
 from opentn.states.qubits import up, down, plus, minus, I, X, get_ladder_operator
 from scipy.linalg import expm
-
 # implementing the partial trace function
 def partial_trace(rho: np.array, dimA: int, dimB: int) -> tuple:
     """
@@ -169,3 +168,4 @@ def get_unitary_beamsplitter(theta:float=None, gamma:float=None)->np.ndarray:
 
     U = expm(theta*(np.kron(b,a.conj().T) - np.kron(b.conj().T,a)))
     return U
+
