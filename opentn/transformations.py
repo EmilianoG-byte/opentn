@@ -1,10 +1,25 @@
-"""A module containing the transformations between Open Quantum Systems representations and the corresponding helping methods"""
+"""
+A module containing the transformations between Open Quantum Systems representations and the 
+corresponding helping methods
+"""
 
+import scipy
 import numpy as np
-from scipy.linalg import expm
+import jax.numpy as jnp
+import jax.scipy as jscipy
 
 
-def lindbladian2super(H:np.ndarray = None, Li:list[np.ndarray] = [], dim:int=2)->np.ndarray:
+def exp_operator_dt(op:np.ndarray, tau:float=1, library='jax')->np.ndarray:
+    "exponentiate operator with a certain time step size tau"
+    if library == 'scipy':
+        exp_op = scipy.linalg.expm(op*tau)
+    elif library == 'jax':
+        exp_op = jscipy.linalg.expm(op*tau)
+    else:
+        raise ValueError(f'{library} is not a valid library string')
+    return exp_op
+
+def lindbladian2super(H:np.ndarray = None, Li:list[np.ndarray] = [], dim:int=None)->np.ndarray:
     """
     Convert from lindbladian master equation to Liouvillian superoperator representation
     
@@ -25,6 +40,11 @@ def lindbladian2super(H:np.ndarray = None, Li:list[np.ndarray] = [], dim:int=2)-
     ---------
         Superoperator representation of the quantum channel
     """
+    if not dim:
+        if H:
+            dim = H.shape[0]
+        elif Li:
+            dim = Li[0].shape[0]
     super = np.zeros(shape=(dim ** 2, dim ** 2),dtype=complex)
     if H:
          super += vectorize_hamiltonian(H=H, dim=dim)
@@ -33,11 +53,13 @@ def lindbladian2super(H:np.ndarray = None, Li:list[np.ndarray] = [], dim:int=2)-
 
     return super
 
-def super2choi(super:np.ndarray, dim:int=2)->np.ndarray:
+def super2choi(super:np.ndarray, dim:int=None)->np.ndarray:
     """
     Convert Superoperator to choi matrix. 
     
-    Assumed to be acting on exp(super(lindbladian)). A row-wise vectorization is assumed
+    'Super' is assumed to be actually on exp(super(lindbladian)). 
+    A row-wise vectorization is assumed
+
     args:
     ---------
     super:
@@ -51,9 +73,37 @@ def super2choi(super:np.ndarray, dim:int=2)->np.ndarray:
     ---------
         Choi Matrix representation of the quantum channel
     """
+    if not dim:
+         dim = int(np.sqrt(super.shape[0]))
     choi = np.reshape(super, [dim] * 4)
     choi = choi.swapaxes(1, 2).reshape([dim ** 2, dim ** 2]) #see graphical proof
     return choi
+
+def choi2super(choi:np.ndarray, dim:int=None)->np.ndarray:
+    """
+    Convert a Choi Matrix to its superoperator representation. 
+    
+    'Super' is assumed to be actually on exp(super(lindbladian)). 
+    A row-wise vectorization is assumed
+
+    args:
+    ---------
+    Choi:
+       Choi Matrix representation of the quantum channel
+    dim:
+        Hilbert space dimension of the operators in H and Li
+        i.e. H in Hilbert space of dimension: dim x dim = d^n  x d^n
+        with d the local dimension and n the number of sites over which it acts
+
+    returns:
+    ---------
+        Superoperator representation of the quantum channel
+    """
+    if not dim:
+        dim = int(np.sqrt(choi.shape[0]))
+    super = np.reshape(choi, [dim] * 4)
+    super = super.swapaxes(1, 2).reshape([dim ** 2, dim ** 2]) #see graphical proof
+    return super
 
 def choi2kraus(choi:np.ndarray, tol:float = 1e-9)->list[np.ndarray]:
     """
@@ -75,9 +125,23 @@ def choi2kraus(choi:np.ndarray, tol:float = 1e-9)->list[np.ndarray]:
         List of kraus operators corrresponding to the quantum channel    
     """
     eigvals, eigvecs = np.linalg.eigh(choi)
+    print([eig for eig in eigvals if abs(eig)>tol])
     kraus_list = [np.sqrt(eigval) * unvectorize(vec) for eigval, vec in
             zip(eigvals, eigvecs.T) if abs(eigval) > tol]
     return kraus_list
+
+def kraus2choi(kraus_list:list[np.ndarray])->np.ndarray:
+    """
+    Convert a list of Kraus operators into its choi matrix representation
+
+    row-wise vectorization assumed. 
+    Choi = \sum_k |Ek>> <<Ek|
+    """
+    if isinstance(kraus_list, np.ndarray):  # handle input of single kraus op
+        if len(kraus_list[0].shape) < 2:
+            kraus_list = [kraus_list]
+
+    return sum([vectorize(Ek) @ vectorize(Ek).conj().T for Ek in kraus_list])
 
 
 def lindbladian2kraus(H:np.ndarray = None, Li:list[np.ndarray] = [], tau:int = 1, tol:float = 1e-9)->list[np.ndarray]:
@@ -111,7 +175,7 @@ def lindbladian2kraus(H:np.ndarray = None, Li:list[np.ndarray] = [], tau:int = 1
 
     # TODO: generalize so that we don't have only the same level at all sites
     super = lindbladian2super(H=H, Li=Li, dim=dim)
-    super_exp = expm(super*tau)
+    super_exp = scipy.linalg.expm(super*tau)
 
     choi = super2choi(super=super_exp, dim=dim)
     return choi2kraus(choi=choi)
@@ -119,7 +183,7 @@ def lindbladian2kraus(H:np.ndarray = None, Li:list[np.ndarray] = [], tau:int = 1
 
 def vectorize(matrix:np.ndarray)->np.array:
     "vectorize matrix in a row-wise order"
-    return matrix.flatten()  
+    return matrix.reshape(-1,1) # column vector  
 
 def unvectorize(vector:np.ndarray)->np.ndarray:
     "unvectorize vector in row-wise manner. Square matrix assumed"
@@ -166,3 +230,35 @@ def find_nonzero(matrix:np.ndarray):
     "print all the non zero elements and indices of a matrix"
     for i,j in zip(*np.nonzero(matrix)):
         print(f'{i}, {j}: {matrix[i,j]}')
+
+def factorize_psd(psd:np.ndarray, check_hermitian:False, tol:float=1e-9):
+    """
+    factorize a positive-semidefinite-matrix (psd) into its "square root" matrix
+    B and its adjoint.
+    
+    i.e. psd = B @ B.conj().T
+
+    args:
+    ---------
+    psd:
+        PSD matrix to be factorized. To save compt. speed, we will not check that this
+        matrix is indeed psd. Checking hermicity is optional.
+    check_hermitian:
+        Wether to check if the input matrix `psd` is hermitian. np.linalg.eigh would fail if not.
+    tol:
+        Eigenvalues with absolute value below this number will be regarded as 0.
+   
+    returns:
+    ---------
+    B:
+        "Square root" matrix of input PSD matrix.
+    """
+    if check_hermitian:
+        assert np.allclose(psd, psd.conj().T), "Matrix is not hermitian"
+    eigvals, eigvecs = np.linalg.eigh(psd)
+    B = np.empty_like(eigvecs)
+    for i, eig in enumerate(eigvals):
+        if abs(eig) < tol:
+            eig = 0
+        B[:,i] = eigvecs[:,i]*np.sqrt(eig)
+    return B

@@ -281,18 +281,24 @@ class MPOP(MPO):
             Ks = [K, 1]
         # Decide on a splitting of the K dimension. Paper suggests that putting all to one side is not so bad
         K1, K2 = Ks
+        assert K1*K2 == K, f"kraus dimensions K1:{K1} and K2:{K2} do not match the original dimension K:{K}"
         kraus_tensor = np.reshape(kraus_tensor, newshape=[K1, K2] + [dim]*4)  # K1 K2 Sout(l) Sout(l+1) Sin(l) Sin(l+1)
         # transpose to have a matrix like later for SVD
         kraus_tensor = np.transpose(kraus_tensor, axes=(2,0,4,3,1,5)) # Sout(l) K1 Sin(l) Sout(l+1) K2 Sin(l+1) 
         # reshape into a matrix for svd
         kraus_matrix = np.reshape(kraus_tensor, newshape=[dim * K1 * dim, dim * K2 * dim]) # (Sout(l) * K1 * Sin(l)) (Sout(l+1) * K2 * Sin(l+1))
         # perform svd
-        u, s, vh = svd(kraus_matrix, full_matrices=False) # vh: D (Sout(l+1) * K2 * Sin(l+1))
-        # reshape u and vh, and absorv s. Absorb into u for simplicity. D is the 'bond dimension'
-        D = len(s)
-        u_s = u@np.diag(s) # (Sout(l) * K1 * Sin(l)) D
-        Bl = np.reshape(u_s, newshape=[dim, K1, dim, D]) # Sout(l) K1 Sin(l) D
-        Br = np.reshape(vh, newshape=[D, dim, K2, dim]) # D Sout(l+1) K2 Sin(l+1)
+        # u, s, vh = svd(kraus_matrix, full_matrices=False) # vh: D (Sout(l+1) * K2 * Sin(l+1))
+        # # reshape u and vh, and absorv s. Absorb into u for simplicity. D is the 'bond dimension'
+        # D = len(s)
+        # u_s = u@np.diag(s) # (Sout(l) * K1 * Sin(l)) D
+        # Bl = np.reshape(u_s, newshape=[dim, K1, dim, D]) # Sout(l) K1 Sin(l) D
+        # Br = np.reshape(vh, newshape=[D, dim, K2, dim]) # D Sout(l+1) K2 Sin(l+1)
+        # QR insead
+        q, r = np.linalg.qr(kraus_matrix, mode='reduced')
+        D = q.shape[1]
+        Bl = np.reshape(q, newshape=[dim, K1, dim, D]) # Sout(l) K1 Sin(l) D
+        Br = np.reshape(r, newshape=[D, dim, K2, dim]) # D Sout(l+1) K2 Sin(l+1)
         # Apply it on the nearest neighbours given by index
         i, j = idx_list
         assert j == i+1, "idx_list must contain index of two consecutive sites"
