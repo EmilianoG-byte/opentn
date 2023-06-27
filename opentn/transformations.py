@@ -231,7 +231,7 @@ def find_nonzero(matrix:np.ndarray):
     for i,j in zip(*np.nonzero(matrix)):
         print(f'{i}, {j}: {matrix[i,j]}')
 
-def factorize_psd(psd:np.ndarray, check_hermitian:False, tol:float=1e-9):
+def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
     """
     factorize a positive-semidefinite-matrix (psd) into its "square root" matrix
     B and its adjoint.
