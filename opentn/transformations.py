@@ -7,7 +7,7 @@ import scipy
 import numpy as np
 import jax.numpy as jnp
 import jax.scipy as jscipy
-
+from opentn.states.qubits import get_ladder_operator
 
 def exp_operator_dt(op:np.ndarray, tau:float=1, library='jax')->np.ndarray:
     "exponentiate operator with a certain time step size tau"
@@ -86,6 +86,10 @@ def choi2super(choi:np.ndarray, dim:int=None)->np.ndarray:
     'Super' is assumed to be actually on exp(super(lindbladian)). 
     A row-wise vectorization is assumed
 
+    TODO: add argument N = sites. right now if dim is not passed, we assume
+    that we have only 1 site with dim = sqrt(choi.shape[0]). 
+    in reality we should satisfy the condition dim**(2*N) = choi.shape[0]
+
     args:
     ---------
     Choi:
@@ -101,6 +105,7 @@ def choi2super(choi:np.ndarray, dim:int=None)->np.ndarray:
     """
     if not dim:
         dim = int(np.sqrt(choi.shape[0]))
+    assert choi.shape[0] == dim
     super = np.reshape(choi, [dim] * 4)
     super = super.swapaxes(1, 2).reshape([dim ** 2, dim ** 2]) #see graphical proof
     return super
@@ -262,3 +267,25 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
             eig = 0
         B[:,i] = eigvecs[:,i]*np.sqrt(eig)
     return B
+
+def create_kitaev_liouvillians(N, d, gamma):
+    ""
+    lowering = get_ladder_operator()
+    raising = get_ladder_operator(adjoint=True)
+    NN = 2
+    
+    Lnn = jnp.sqrt(gamma)*(op2fullspace(raising, i=0, N=NN) + op2fullspace(raising, i=1, N=NN))@(op2fullspace(lowering, i=0, N=NN) - op2fullspace(lowering, i=1, N=NN))/4
+
+    Lvec = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
+    for i in range(0, N-1):
+        Lvec += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)    
+    
+    Lvec_odd = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
+    for i in range(0, N, 2):
+        Lvec_odd += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
+
+    Lvec_even = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
+    for i in range(1, N-1, 2):
+        Lvec_even += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
+
+    return Lvec, Lvec_odd, Lvec_even, Lnn

@@ -1,16 +1,16 @@
 import numpy as np
-
+import jax.numpy as np
 
 # defining the |0> and |1> for facility
 # define a pure state. note: need to define complex for latter use of += operation.
-up = np.array([[1,0]], dtype=np.complex128).T
-down = np.array([[0,1]], dtype=np.complex128).T
+up = np.array([[1,0]], dtype=complex).T
+down = np.array([[0,1]], dtype=complex).T
 # same for |+> and |-> states
 plus = (up + down)/np.sqrt(2)
 minus = (up - down)/np.sqrt(2)
 
 #matrices
-I = np.eye(2, dtype=np.complex128)
+I = np.eye(2, dtype=complex)
 X = np.outer(up,down) + np.outer(down,up)
 Z = np.outer(up,up) - np.outer(down,down)
 Y =  -1j*np.outer(up,down) + 1j*np.outer(down,up)
@@ -31,7 +31,7 @@ def get_ladder_operator(num_levels:int=2, adjoint:bool=False) -> np.ndarray:
     a: (np.ndarray)
         operator
     """
-    a = np.diag(v=np.array([np.sqrt(i) for i in range(1,num_levels)],dtype=np.complex128),k=1)
+    a = np.diag(v=np.array([np.sqrt(i) for i in range(1,num_levels)],dtype=complex),k=1)
     if adjoint:
         a = a.conj().T
     return a
