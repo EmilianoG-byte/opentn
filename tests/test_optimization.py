@@ -2,8 +2,7 @@ import jax.numpy as jnp
 import jax.scipy as jscipy
 import numpy as np
 # import functions to test
-from opentn.transformations import lindbladian2super, create_kitaev_liouvillians, exp_operator_dt, factorize_psd, super2choi, choi2super
-from itertools import chain
+from opentn.transformations import lindbladian2super, create_kitaev_liouvillians, exp_operator_dt, factorize_psd, super2choi, convert_localtensors2liouvillianfull
 import pytest
 
 from jax import config
@@ -17,7 +16,6 @@ class TestLvec:
     test_data_params = [
         (4, 2, 1e-2)
     ]
-
     @pytest.mark.parametrize("N, d, gamma", test_data_params)
     def test_kitaev_liouvillians(self, N, d, gamma):
         """
@@ -45,18 +43,9 @@ class TestLvec:
         for _ in range(0, N//2-1):
             super_exp_full = jnp.kron(super_exp_full, super_exp_full)
 
+        super_exp_full = convert_localtensors2liouvillianfull(super_exp_full, N, d)
+        
         assert super_exp_full.shape == exp_Lvec_odd.shape
-
-        super_exp_full = jnp.reshape(super_exp_full, newshape=[d]*4*N)
-        source_idx = list(chain.from_iterable((2 + i*4, 3 + i*4) for i in range((N-2)//2)))
-        # create indices to swap
-        destination_idx = [i for i in range(N, 2*N-2)]
-        # create full input parameters including both sides of superoperator
-        source = source_idx + list(jnp.array(source_idx) + 2*N)
-        destination = destination_idx + list(np.array(destination_idx) + 2*N)
-        super_exp_full = jnp.moveaxis(super_exp_full, source=source, destination=destination)
-
-        super_exp_full = jnp.reshape(super_exp_full, newshape=exp_Lvec_odd.shape)
         assert np.allclose(super_exp_full, exp_Lvec_odd)
 
     @pytest.mark.parametrize("N, d, gamma, tau", test_data_params)

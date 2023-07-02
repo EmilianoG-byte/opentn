@@ -8,6 +8,7 @@ import numpy as np
 import jax.numpy as jnp
 import jax.scipy as jscipy
 from opentn.states.qubits import get_ladder_operator
+from itertools import chain
 
 def exp_operator_dt(op:np.ndarray, tau:float=1, library='jax')->np.ndarray:
     "exponentiate operator with a certain time step size tau"
@@ -53,7 +54,7 @@ def lindbladian2super(H:np.ndarray = None, Li:list[np.ndarray] = [], dim:int=Non
 
     return super
 
-def super2choi(super:np.ndarray, dim:int=None)->np.ndarray:
+def super2choi(superop:np.ndarray, dim:int=None)->np.ndarray:
     """
     Convert Superoperator to choi matrix. 
     
@@ -68,14 +69,16 @@ def super2choi(super:np.ndarray, dim:int=None)->np.ndarray:
         Hilbert space dimension of the operators in H and Li
         i.e. H in Hilbert space of dimension dim x dim = d^n  x d^n
         with d the local dimension and n the number of sites over which it acts
+        superop and choi should have dimensions = d^2n  x d^2n
 
     returns:
     ---------
         Choi Matrix representation of the quantum channel
     """
     if not dim:
-         dim = int(np.sqrt(super.shape[0]))
-    choi = np.reshape(super, [dim] * 4)
+         dim = int(np.sqrt(superop.shape[0]))
+    assert superop.shape[0] == dim**2
+    choi = np.reshape(superop, [dim] * 4)
     choi = choi.swapaxes(1, 2).reshape([dim ** 2, dim ** 2]) #see graphical proof
     return choi
 
@@ -98,17 +101,17 @@ def choi2super(choi:np.ndarray, dim:int=None)->np.ndarray:
         Hilbert space dimension of the operators in H and Li
         i.e. H in Hilbert space of dimension: dim x dim = d^n  x d^n
         with d the local dimension and n the number of sites over which it acts
-
+        superop and choi should have dimensions = d^2n  x d^2n
     returns:
     ---------
         Superoperator representation of the quantum channel
     """
     if not dim:
         dim = int(np.sqrt(choi.shape[0]))
-    assert choi.shape[0] == dim
-    super = np.reshape(choi, [dim] * 4)
-    super = super.swapaxes(1, 2).reshape([dim ** 2, dim ** 2]) #see graphical proof
-    return super
+    assert choi.shape[0] == dim**2
+    superop = np.reshape(choi, [dim] * 4)
+    superop = superop.swapaxes(1, 2).reshape([dim ** 2, dim ** 2]) #see graphical proof
+    return superop
 
 def choi2kraus(choi:np.ndarray, tol:float = 1e-9)->list[np.ndarray]:
     """
@@ -289,3 +292,41 @@ def create_kitaev_liouvillians(N, d, gamma):
         Lvec_even += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
 
     return Lvec, Lvec_odd, Lvec_even, Lnn
+
+def get_indices_localtensors2liouvillianfull(N:int):
+    """
+    get the source and destination indices to compare full superoperator created from local superoperators tensored with the full superoperator created from exponentiating the full vectorized lindbladians.
+
+    Here we assume that we are going from tensored-full-liouvillian
+    NOTE: for opposite convention just interchange roles of source_full <-> destination_full
+    """
+    # create indices to swap for a single side of the superoperator
+    source_one_side = list(chain.from_iterable((2 + i*4, 3 + i*4) for i in range((N-2)//2)))
+    destination_one_side = [i for i in range(N, 2*N-2)]
+    # create full indices including both sides of superoperator
+    source_full = source_one_side + list(jnp.array(source_one_side) + 2*N)
+    destination_full = destination_one_side + list(np.array(destination_one_side) + 2*N)
+    return source_full, destination_full
+
+def swap_superop_indices(suoperop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int):
+    "swap the indices of the superoperator"
+    swaped_superop = jnp.reshape(suoperop, newshape=[d]*4*N)
+    swaped_superop = jnp.moveaxis(swaped_superop, source=source_indices, destination=destination_indices)
+    swaped_superop = jnp.reshape(swaped_superop, newshape=suoperop.shape)
+    return swaped_superop
+
+def convert_localtensors2liouvillianfull(local_tensored:np.ndarray, N:int, d:int):
+    """
+    convert full superoperator created from local superoperators tensored to the full
+    superoperator created from exponentiating the full vectorized lindbladians
+    """
+    source_indices, destination_indices = get_indices_localtensors2liouvillianfull(N)
+    return swap_superop_indices(local_tensored, source_indices, destination_indices, N, d)
+
+
+def convert_liouvillianfull2localtensors(full_liouvillian:np.ndarray, N:int, d:int):
+    """
+    convert the full superoperator created from exponentiating the full vectorized lindbladians to the full superoperator created from local superoperators tensored
+    """
+    destination_indices, source_indices = get_indices_localtensors2liouvillianfull(N)
+    return swap_superop_indices(full_liouvillian, source_indices, destination_indices, N, d)

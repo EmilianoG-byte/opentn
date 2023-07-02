@@ -267,7 +267,7 @@ class MPOP(MPO):
         self.Ws[idx] = W_new
 
     def apply_nn_kraus(self, kraus_list:list[np.ndarray], idx_list:list = [0,1], dim:int = 2, Ks:list[int] = None, U:np.ndarray = None, inplace:bool = False):
-        "Applies the nearest nieghbour kraus operators to two sites"
+        "Applies the nearest neighbour kraus operators to two sites"
         # first step: stack them to have the kraus dimension back:
         K = len(kraus_list)
         kraus_tensor = np.stack(kraus_list, axis=0) # K Sout(l,l+1) Sin(l,l+1)

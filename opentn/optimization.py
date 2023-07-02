@@ -31,9 +31,20 @@ def cosine_similarity(A:np.ndarray,B:np.ndarray):
     b = vectorize(B)
     # taking the real part as otherwise the grad calculation should guarantee cost_fn to be holomorphic
     return -(a@b.T.conj() / (jnp.linalg.norm(a)*jnp.linalg.norm(b))).real
-    
+
 @jit
-def model(Xs):
+def model_Zs(Ws):
+    "here Zi = Wi @ Wi.conj().T"
+
+    return 0
+
+def compute_loss_Zs(Ws, loss_fn, exact):
+    prediction = model_Zs(Ws)
+    # the "exact" will be the resulting Y (X) which has order of legs 0,...,N-1, 0*, ..., N-1*
+    return jit(loss_fn)(exact, prediction)
+
+@jit
+def model_Ys(Xs):
     "Xs are assumed to be the square roots of the PSD matrices (Choi)"
     Ys = []
     for X in Xs:
@@ -55,7 +66,7 @@ def compute_loss(X1, X2, X3, loss_fn, exact):
     # these are choi matrices
     Xs = [X1,X2,X3]
     # model will convert them to superoperators
-    prediction = model(Xs)
+    prediction = model_Ys(Xs)
     
     assert exact.ndim == exact.ndim == 2, 'Y_total should be a matrix'
     return jit(loss_fn)(exact, prediction)
