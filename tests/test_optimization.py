@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import jax.scipy as jscipy
 import numpy as np
 # import functions to test
-from opentn.transformations import lindbladian2super, create_kitaev_liouvillians, exp_operator_dt, factorize_psd, super2choi, convert_localtensors2liouvillianfull
+from opentn.transformations import create_kitaev_liouvillians, exp_operator_dt, factorize_psd, super2choi, convert_supertensored2liouvillianfull, create_supertensored_from_local, lindbladian2super
 import pytest
 
 from jax import config
@@ -36,14 +36,12 @@ class TestLvec:
         """
         Lvec, Lvec_odd, Lvec_even, Lnn = create_kitaev_liouvillians(N, d, gamma)
         # now check the liovillians exp are created properly
-        exp_Lvec_odd = exp_operator_dt(Lvec_odd, tau/2, 'jax') 
-
-        super_op = lindbladian2super(Li=[Lnn], dim=Lnn.shape[0])
-        super_exp_full = jscipy.linalg.expm(super_op*tau/2)
-        for _ in range(0, N//2-1):
-            super_exp_full = jnp.kron(super_exp_full, super_exp_full)
-
-        super_exp_full = convert_localtensors2liouvillianfull(super_exp_full, N, d)
+        exp_Lvec_odd = exp_operator_dt(Lvec_odd, tau, 'jax') 
+        
+        superop = lindbladian2super(Li=[Lnn])
+        superop = exp_operator_dt(superop, tau, 'jax')
+        super_exp_full = create_supertensored_from_local(superop, N)
+        super_exp_full = convert_supertensored2liouvillianfull(super_exp_full, N, d)
         
         assert super_exp_full.shape == exp_Lvec_odd.shape
         assert np.allclose(super_exp_full, exp_Lvec_odd)

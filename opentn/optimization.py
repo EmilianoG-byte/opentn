@@ -7,19 +7,23 @@ import jax.numpy as jnp
 import numpy as np
 from typing import Callable
 from jax import jit
-from opentn.transformations import vectorize, choi2super
+from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull
+import cvxpy as cvx
+
+from jax import config
+config.update("jax_enable_x64", True)
 
 def calculate_norms(Os):
     "calculates the norm of a list of operators O in Os"
     for O in Os:
         print(jnp.linalg.norm(O))
 
-def update(old_params, grads, rate=0.1):
+def update(old_params:list, grads:list, rate:float):
     assert len(old_params) == len(grads)
-    new_params = []
-    for param, grad in zip(old_params, grads):
-        new_params.append(param - rate*grad)
-    return new_params
+    # new_params = []
+    # for param, grad in zip(old_params, grads):
+    #     new_params.append(param - rate*grad)
+    return old_params - rate*grads
 
 def frobenius_norm(A:np.ndarray,B:np.ndarray):
     return jnp.linalg.norm(A-B, ord='fro')
@@ -32,20 +36,27 @@ def cosine_similarity(A:np.ndarray,B:np.ndarray):
     # taking the real part as otherwise the grad calculation should guarantee cost_fn to be holomorphic
     return -(a@b.T.conj() / (jnp.linalg.norm(a)*jnp.linalg.norm(b))).real
 
+# TODO: cannnot JIT this function due to create_supertensored_from_local
+def model_Zs(Wi:np.ndarray, Xj:np.ndarray, Xk:np.ndarray, N:int, order:np.ndarray=np.array([0,1,2])):
+    """
+    Zi = Wi @ Wi.conj().T
+    Yi_z = Zi (x) Zi (x) Zi (create_supertensored_from_local)
+    Yi_z = convert_supertensored2liouvillianfull(Yi_z)
+    model = Xk @ Xj @ Yi_z
+    ||O - model||F
+
+    pos: determines what is the Xi over which we are optimizing
+    """
+    Wi_super = create_supertensored_from_local(localop=Wi, N=N)
+    d = int(Wi_super.shape[0]**(1/(2*N)))
+    assert Wi_super.shape[0] == d**(2*N), f"{Wi_super.shape[0]} != {d**(2*N)}"
+    Xi = convert_supertensored2liouvillianfull(Wi_super, N=N, d=d)
+    Xs = jnp.array([Xi, Xj, Xk])
+    return model_Ys(Xs[order])
+
 @jit
-def model_Zs(Ws):
-    "here Zi = Wi @ Wi.conj().T"
-
-    return 0
-
-def compute_loss_Zs(Ws, loss_fn, exact):
-    prediction = model_Zs(Ws)
-    # the "exact" will be the resulting Y (X) which has order of legs 0,...,N-1, 0*, ..., N-1*
-    return jit(loss_fn)(exact, prediction)
-
-@jit
-def model_Ys(Xs):
-    "Xs are assumed to be the square roots of the PSD matrices (Choi)"
+def model_Ys(Xs:np.ndarray):
+    "Xs are assumed to be the square roots of the PSD matrices (Choi). We convert them here to superoperators"
     Ys = []
     for X in Xs:
         # convert each of the X into a matrix
@@ -60,18 +71,15 @@ def model_Ys(Xs):
         Y_total = jnp.dot(Y, Y_total)
     return Y_total
 
-def compute_loss(X1, X2, X3, loss_fn, exact):
-    "cost function for 'troterization' of exponential. The choi matrix is the one that should be PSD"
-    # NOTE: we are going to accept the Xi that correspond to the choi matrix
-    # these are choi matrices
-    Xs = [X1,X2,X3]
-    # model will convert them to superoperators
-    prediction = model_Ys(Xs)
-    
-    assert exact.ndim == exact.ndim == 2, 'Y_total should be a matrix'
+def compute_loss(xi:np.ndarray, loss_fn, model, exact:np.ndarray, **kwargs):
+    """
+    General function to compute the loss of the input parameters in the model agains the exact value using loss_fn as measurement
+    """
+    prediction = model(xi, **kwargs)
+    assert exact.ndim == prediction.ndim == 2, 'not a matrix'
     return jit(loss_fn)(exact, prediction)
 
-def gds(fn:Callable, x0:list, exact:np.ndarray, rate:float = 0.01, iter:int = 10, loss_fn=None, show_cost:bool=True) -> tuple[list, list, list]:
+def gds(fn:Callable, x0:list, exact:np.ndarray, rate:float = 0.01, iter:int = 10, loss_fn=None, model=None, show_cost:bool=True, store_all:bool=True, **kwargs) -> tuple[list, list, list]:
     """
     Gradient descent (GDS) optimization workflow.
 
@@ -80,7 +88,8 @@ def gds(fn:Callable, x0:list, exact:np.ndarray, rate:float = 0.01, iter:int = 10
     args:
     ---------
     fn:
-        function to be optimized. The signature should be: (xi:parameters_to_optimimize, loss_fn:loss function, exact:exact_value_to_compare)
+        function to be optimized. The signature should be: 
+        (xi:parameters_to_optimimize, loss_fn:loss function, model:model for prediction, exact:exact_value_to_compare)
     x0:
         initial list of parameters for optimization
     exact:
@@ -105,25 +114,33 @@ def gds(fn:Callable, x0:list, exact:np.ndarray, rate:float = 0.01, iter:int = 10
     """
     if not loss_fn:
         loss_fn = lambda x,y : jnp.linalg.norm(x-y, ord='fro')
+    if not model:
+        model = model_Ys
 
     cost_list = []
     grads_list = []
     params_list = []
 
-    xi = x0
-    num_params = len(xi)
+    xi = jnp.array(x0)
+    # num_params = len(xi)
     params_list.append(xi)
 
     for i in range(iter):
-        print(f'Starting iteration: {i}')
-        cost_eval, grad_x = jax.value_and_grad(fn, list(range(num_params)))(*xi, loss_fn=loss_fn, exact=exact)
-        cost_list.append(cost_eval)
-        grads_list.append(grad_x)
+        if show_cost:
+            print(f'Starting iteration: {i}')
+        cost_eval, grad_x = jax.value_and_grad(fn, 0)(xi, loss_fn=loss_fn, model=model, exact=exact, **kwargs) # NOTE: erased: list(range(num_params))
         if show_cost:
             print('* Cost function:', cost_eval)
         xi = update(xi, grad_x, rate)
-        params_list.append(xi)
-
+        cost_list.append(cost_eval)
+        if store_all:
+            grads_list.append(grad_x)
+            params_list.append(xi)
+        else:
+            if i == iter-1:
+                grads_list.append(grad_x)
+                params_list.append(xi)
+            
     return cost_list, grads_list, params_list
 
 
@@ -153,7 +170,7 @@ def diamond_norm_distance(choi0: np.ndarray, choi1: np.ndarray) -> float:
     """
     # Kudos: Based on MatLab code written by Marcus P. da Silva
     # (https://github.com/BBN-Q/matlab-diamond-norm/)
-    import cvxpy as cvx
+   
     assert choi0.shape == choi1.shape
     assert choi0.shape[0] == choi1.shape[1]
     dim_squared = choi0.shape[0]

@@ -10,6 +10,9 @@ import jax.scipy as jscipy
 from opentn.states.qubits import get_ladder_operator
 from itertools import chain
 
+from jax import config
+config.update("jax_enable_x64", True)
+
 def exp_operator_dt(op:np.ndarray, tau:float=1, library='jax')->np.ndarray:
     "exponentiate operator with a certain time step size tau"
     if library == 'scipy':
@@ -258,18 +261,21 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
    
     returns:
     ---------
-    B:
+    X:
         "Square root" matrix of input PSD matrix.
+    TODO: apply what prof. Mendl said about a parameter that determines how big will the B  be.
+    meaning how many eigenvalues will we keep such that: psd = X @ X+
+    but with less columns in X.
     """
     if check_hermitian:
         assert np.allclose(psd, psd.conj().T), "Matrix is not hermitian"
     eigvals, eigvecs = np.linalg.eigh(psd)
-    B = np.empty_like(eigvecs)
+    X = np.empty_like(eigvecs)
     for i, eig in enumerate(eigvals):
         if abs(eig) < tol:
             eig = 0
-        B[:,i] = eigvecs[:,i]*np.sqrt(eig)
-    return B
+        X[:,i] = eigvecs[:,i]*np.sqrt(eig)
+    return X
 
 def create_kitaev_liouvillians(N, d, gamma):
     ""
@@ -293,7 +299,15 @@ def create_kitaev_liouvillians(N, d, gamma):
 
     return Lvec, Lvec_odd, Lvec_even, Lnn
 
-def get_indices_localtensors2liouvillianfull(N:int):
+def create_supertensored_from_local(localop:np.ndarray, N:int):
+    "we asssume we have only one single operator tensored accross all sites to get the full superop"
+    # NOTE: we also assuming that localop is acting on two sites
+    superop = localop
+    for _ in range(0, N//2-1):
+        superop = jnp.kron(superop, superop)
+    return superop
+
+def get_indices_supertensored2liouvillianfull(N:int):
     """
     get the source and destination indices to compare full superoperator created from local superoperators tensored with the full superoperator created from exponentiating the full vectorized lindbladians.
 
@@ -304,7 +318,7 @@ def get_indices_localtensors2liouvillianfull(N:int):
     source_one_side = list(chain.from_iterable((2 + i*4, 3 + i*4) for i in range((N-2)//2)))
     destination_one_side = [i for i in range(N, 2*N-2)]
     # create full indices including both sides of superoperator
-    source_full = source_one_side + list(jnp.array(source_one_side) + 2*N)
+    source_full = source_one_side + list(np.array(source_one_side) + 2*N)
     destination_full = destination_one_side + list(np.array(destination_one_side) + 2*N)
     return source_full, destination_full
 
@@ -315,18 +329,87 @@ def swap_superop_indices(suoperop:np.ndarray, source_indices:list[int], destinat
     swaped_superop = jnp.reshape(swaped_superop, newshape=suoperop.shape)
     return swaped_superop
 
-def convert_localtensors2liouvillianfull(local_tensored:np.ndarray, N:int, d:int):
+def convert_supertensored2liouvillianfull(local_tensored:np.ndarray, N:int, d:int):
     """
     convert full superoperator created from local superoperators tensored to the full
     superoperator created from exponentiating the full vectorized lindbladians
     """
-    source_indices, destination_indices = get_indices_localtensors2liouvillianfull(N)
+    source_indices, destination_indices = get_indices_supertensored2liouvillianfull(N)
     return swap_superop_indices(local_tensored, source_indices, destination_indices, N, d)
 
 
-def convert_liouvillianfull2localtensors(full_liouvillian:np.ndarray, N:int, d:int):
+def convert_liouvillianfull2supertensored(full_liouvillian:np.ndarray, N:int, d:int):
     """
     convert the full superoperator created from exponentiating the full vectorized lindbladians to the full superoperator created from local superoperators tensored
     """
-    destination_indices, source_indices = get_indices_localtensors2liouvillianfull(N)
+    destination_indices, source_indices = get_indices_supertensored2liouvillianfull(N)
     return swap_superop_indices(full_liouvillian, source_indices, destination_indices, N, d)
+
+def link_product(C1:np.ndarray, C2:np.ndarray, dim)->np.ndarray:
+    """
+    link product is the composition of two individual choi matrices C1 and C2
+    
+    We assume that C2 is applied after C1.
+
+    sources: 
+    * https://arxiv.org/pdf/0904.4483.pdf
+    * https://quantumcomputing.stackexchange.com/questions/10126/explicit-form-for-composition-of-choi-representation-quantum-channels/14586#14586
+
+    NOTE: here we assume that C1 and C2 act over spaces of same dimensions
+
+    args:
+    ---------
+    C1:
+        PSD choi matrix representing the first linear operator to be applied
+    C2:
+        PSD choi matrix representing the second linear operator to be applied (i.e. after C1)
+    dim:
+        Hilbert space dimension over which C1 and C2 act.
+        i.e. rho (density matrix) is in a Hilbert space of dimension: dim x dim = d^n  x d^n
+        with d the local dimension and n the number of sites over which it acts
+        chois should have dimensions = d^2n  x d^2n   
+
+    returns:
+    ---------
+    C_12:
+        choi representation of the composition of C1 and C2
+    """
+    assert C1.shape == C2.shape, 'dimensions of C1 and C2 do not coincide'
+    # partial transpose over system B for first choi
+    C1_TB = np.reshape(C1, [dim]*4).swapaxes(0,2).reshape([dim**2, dim**2])  
+    IC, IA = np.eye(dim), np.eye(dim)
+    # in theory the order of matrix multiplication here could be inverted since we have a trace at the end.
+    C_12 = np.kron(IC,C1_TB) @ np.kron(C2, IA)
+    # partial trace over system B for full expression
+    C_12 = C_12.reshape([dim]*6).trace(axis1=1,axis2=4).reshape([dim**2, dim**2]) 
+    return C_12
+
+def choi_composition(C1:np.ndarray, C2:np.ndarray, dim)->np.ndarray:
+    """
+    Choi matrix of the composition of two individual choi matrices C1 and C2
+    
+    Should be equivalent to link_product()
+    We assume that C2 is applied after C1.
+
+    args:
+    ---------
+    C1:
+        PSD choi matrix representing the first linear operator to be applied
+    C2:
+        PSD choi matrix representing the second linear operator to be applied (i.e. after C1)
+    dim:
+        Hilbert space dimension over which C1 and C2 act.
+        i.e. rho (density matrix) is in a Hilbert space of dimension: dim x dim = d^n  x d^n
+        with d the local dimension and n the number of sites over which it acts
+        chois should have dimensions = d^2n  x d^2n   
+
+    returns:
+    ---------
+    C_12:
+        choi representation of the composition of C1 and C2
+    """
+    assert C1.shape == C2.shape, 'dimensions of C1 and C2 do not coincide'
+    # recall that we are trying to mimic the contrations that happen when multiplying two superoperators
+    C_12 = np.tensordot(C2.reshape([dim]*4), C1.reshape([dim]*4), axes=[(1,3),(0,2)]) # out_j (in_j) out_j* (in_j*), (out_i) in_i (out_i*) in_i* -> out_j out_j* in_i in_i*
+    C_12 = C_12.transpose((0,2,1,3)).reshape([dim**2]*2) # out_j in_i out_j* in_i*
+    return C_12
