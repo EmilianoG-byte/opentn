@@ -345,6 +345,58 @@ def convert_liouvillianfull2supertensored(full_liouvillian:np.ndarray, N:int, d:
     destination_indices, source_indices = get_indices_supertensored2liouvillianfull(N)
     return swap_superop_indices(full_liouvillian, source_indices, destination_indices, N, d)
 
+
+def partial_transpose(op:np.ndarray, dims:list[int], idx:int=0):
+    """
+    Partial transpose of op over subsytem with index idx
+
+    We assume the operator is made up of n subsystems. Each with dimension dims[i]
+
+    args:
+    ---------
+    op:
+        operator over which to perform partial transpose
+    dims:
+        list of dimensions fo the n subystems composing op.
+    idx:
+        index of the subsytem over which to perform the partial transpose  
+
+    returns:
+    ---------
+       operator with the same dimensions as op but with idx subsytem transposed
+    """
+    assert op.shape[0] == op.shape[1], 'op should be a sqaure matrix'
+    assert op.shape == (np.prod(dims),)*2, f'dimensions {dims} do not match operator dimensions {op.shape}'
+    assert 0 <= idx < len(dims), 'idx out of range of dimensions'
+    return np.reshape(op, dims*2).swapaxes(idx, idx + len(dims)).reshape([np.prod(dims)]*2)
+
+def partial_trace(op:np.ndarray, dims:list[int], idx:int=0):
+    """
+    partial trace of op over subsystem idx.
+
+    We assume the operator is made up of n subsystems. Each with dimension dims[i]
+
+    args:
+    ---------
+    op:
+        operator over which to perform partial trace
+    dims:
+        list of dimensions fo the n subystems composing op.
+    idx:
+        index of the subsytem over which to perform the partial trace  
+
+    returns:
+    ---------
+       operator with the system idx traced out
+    """
+    assert op.shape[0] == op.shape[1], 'op should be a sqaure matrix'
+    assert op.shape == (np.prod(dims),)*2, f'dimensions {dims} do not match operator dimensions {op.shape}'
+    assert 0 <= idx < len(dims), 'idx out of range of dimensions'
+    # TODO: fix this because we should np.prod of only the dimensions that are left without idx.
+    op_traced = op.reshape(dims*2).trace(axis1=idx,axis2=idx + len(dims))
+    del dims[idx]
+    return op_traced.reshape([np.prod(dims)]*2)
+
 def link_product(C1:np.ndarray, C2:np.ndarray, dim)->np.ndarray:
     """
     link product is the composition of two individual choi matrices C1 and C2
@@ -376,12 +428,12 @@ def link_product(C1:np.ndarray, C2:np.ndarray, dim)->np.ndarray:
     """
     assert C1.shape == C2.shape, 'dimensions of C1 and C2 do not coincide'
     # partial transpose over system B for first choi
-    C1_TB = np.reshape(C1, [dim]*4).swapaxes(0,2).reshape([dim**2, dim**2])  
+    C1_TB = partial_transpose(C1, dims=[dim, dim], idx=0)
     IC, IA = np.eye(dim), np.eye(dim)
     # in theory the order of matrix multiplication here could be inverted since we have a trace at the end.
     C_12 = np.kron(IC,C1_TB) @ np.kron(C2, IA)
     # partial trace over system B for full expression
-    C_12 = C_12.reshape([dim]*6).trace(axis1=1,axis2=4).reshape([dim**2, dim**2]) 
+    C_12 = partial_trace(C_12, dims=[dim, dim, dim], idx=1)
     return C_12
 
 def choi_composition(C1:np.ndarray, C2:np.ndarray, dim)->np.ndarray:
