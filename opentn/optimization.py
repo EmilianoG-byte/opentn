@@ -13,6 +13,11 @@ import cvxpy as cvx
 from jax import config
 config.update("jax_enable_x64", True)
 
+
+def small2zero(op:np.array, tol:float=1e-8):
+    "erase the elements in op smaller (abs) than tol. Does NOT change in place"
+    return np.where(abs(op)>=tol, op, 0)
+
 def calculate_norms(Os):
     "calculates the norm of a list of operators O in Os"
     for O in Os:
