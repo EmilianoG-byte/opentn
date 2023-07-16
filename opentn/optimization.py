@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from typing import Callable
 from jax import jit
-from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull
+from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition
 import cvxpy as cvx
 
 from jax import config
@@ -40,6 +40,13 @@ def cosine_similarity(A:np.ndarray,B:np.ndarray):
     b = vectorize(B)
     # taking the real part as otherwise the grad calculation should guarantee cost_fn to be holomorphic
     return -(a@b.T.conj() / (jnp.linalg.norm(a)*jnp.linalg.norm(b))).real
+
+def model_Cs(Cs:np.ndarray):
+    "Composition of choi matrices. Cs are assumed to be PSD. Will return a Choi as well"
+    C_total  = Cs[0]
+    for C in Cs[1:]:
+        C_total = choi_composition(C_total, C)
+    return C_total
 
 # TODO: cannnot JIT this function due to create_supertensored_from_local
 def model_Zs(Wi:np.ndarray, Xj:np.ndarray, Xk:np.ndarray, N:int, order:np.ndarray=np.array([0,1,2])):

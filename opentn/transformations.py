@@ -274,7 +274,12 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
     for i, eig in enumerate(eigvals):
         if abs(eig) < tol:
             eig = 0
-        X[:,i] = eigvecs[:,i]*np.sqrt(eig)
+        with np.errstate(invalid='raise'): 
+            try:
+                X[:,i] = eigvecs[:,i]*np.sqrt(eig)
+            except:
+                raise ValueError(f'invalid eigenvalue found: {eig}. input is not PSD')
+            # see: https://stackoverflow.com/questions/15933741/how-do-i-catch-a-numpy-warning-like-its-an-exception-not-just-for-testing
     return X
 
 def create_kitaev_liouvillians(N, d, gamma):
@@ -397,7 +402,7 @@ def partial_trace(op:np.ndarray, dims:list[int], idx:int=0):
     del dims[idx]
     return op_traced.reshape([np.prod(dims)]*2)
 
-def link_product(C1:np.ndarray, C2:np.ndarray, dim)->np.ndarray:
+def link_product(C1:np.ndarray, C2:np.ndarray, dim:int=None)->np.ndarray:
     """
     link product is the composition of two individual choi matrices C1 and C2
     
@@ -427,6 +432,8 @@ def link_product(C1:np.ndarray, C2:np.ndarray, dim)->np.ndarray:
         choi representation of the composition of C1 and C2
     """
     assert C1.shape == C2.shape, 'dimensions of C1 and C2 do not coincide'
+    if not dim:
+        dim = int(np.sqrt(C1.shape[0]))
     # partial transpose over system B for first choi
     C1_TB = partial_transpose(C1, dims=[dim, dim], idx=0)
     IC, IA = np.eye(dim), np.eye(dim)
@@ -436,7 +443,7 @@ def link_product(C1:np.ndarray, C2:np.ndarray, dim)->np.ndarray:
     C_12 = partial_trace(C_12, dims=[dim, dim, dim], idx=1)
     return C_12
 
-def choi_composition(C1:np.ndarray, C2:np.ndarray, dim)->np.ndarray:
+def choi_composition(C1:np.ndarray, C2:np.ndarray, dim:int=None)->np.ndarray:
     """
     Choi matrix of the composition of two individual choi matrices C1 and C2
     
@@ -462,6 +469,8 @@ def choi_composition(C1:np.ndarray, C2:np.ndarray, dim)->np.ndarray:
     """
     assert C1.shape == C2.shape, 'dimensions of C1 and C2 do not coincide'
     # recall that we are trying to mimic the contrations that happen when multiplying two superoperators
+    if not dim:
+        dim = int(np.sqrt(C1.shape[0]))
     C_12 = np.tensordot(C2.reshape([dim]*4), C1.reshape([dim]*4), axes=[(1,3),(0,2)]) # out_j (in_j) out_j* (in_j*), (out_i) in_i (out_i*) in_i* -> out_j out_j* in_i in_i*
     C_12 = C_12.transpose((0,2,1,3)).reshape([dim**2]*2) # out_j in_i out_j* in_i*
     return C_12
