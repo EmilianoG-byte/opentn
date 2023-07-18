@@ -136,7 +136,7 @@ def choi2kraus(choi:np.ndarray, tol:float = 1e-9)->list[np.ndarray]:
         List of kraus operators corrresponding to the quantum channel    
     """
     eigvals, eigvecs = np.linalg.eigh(choi)
-    print([eig for eig in eigvals if abs(eig)>tol])
+    # print([eig for eig in eigvals if abs(eig)>tol])
     kraus_list = [np.sqrt(eigval) * unvectorize(vec) for eigval, vec in
             zip(eigvals, eigvecs.T) if abs(eigval) > tol]
     return kraus_list
@@ -188,7 +188,7 @@ def lindbladian2kraus(H:np.ndarray = None, Li:list[np.ndarray] = [], tau:int = 1
     super = lindbladian2super(H=H, Li=Li, dim=dim)
     super_exp = scipy.linalg.expm(super*tau)
 
-    choi = super2choi(super=super_exp, dim=dim)
+    choi = super2choi(superop=super_exp, dim=dim)
     return choi2kraus(choi=choi)
 
 
@@ -402,7 +402,7 @@ def partial_trace(op:np.ndarray, dims:list[int], idx:int=0):
     del dims[idx]
     return op_traced.reshape([np.prod(dims)]*2)
 
-def link_product(C1:np.ndarray, C2:np.ndarray, dim:int=None)->np.ndarray:
+def link_product(C1:np.ndarray, C2:np.ndarray, dim:int=None, transpose:int=0)->np.ndarray:
     """
     link product is the composition of two individual choi matrices C1 and C2
     
@@ -425,6 +425,8 @@ def link_product(C1:np.ndarray, C2:np.ndarray, dim:int=None)->np.ndarray:
         i.e. rho (density matrix) is in a Hilbert space of dimension: dim x dim = d^n  x d^n
         with d the local dimension and n the number of sites over which it acts
         chois should have dimensions = d^2n  x d^2n   
+    transpose:
+        whether the first [0] or second [1] channel will be the one transposed in the expression
 
     returns:
     ---------
@@ -434,11 +436,20 @@ def link_product(C1:np.ndarray, C2:np.ndarray, dim:int=None)->np.ndarray:
     assert C1.shape == C2.shape, 'dimensions of C1 and C2 do not coincide'
     if not dim:
         dim = int(np.sqrt(C1.shape[0]))
-    # partial transpose over system B for first choi
-    C1_TB = partial_transpose(C1, dims=[dim, dim], idx=0)
+
     IC, IA = np.eye(dim), np.eye(dim)
-    # in theory the order of matrix multiplication here could be inverted since we have a trace at the end.
-    C_12 = np.kron(IC,C1_TB) @ np.kron(C2, IA)
+
+    
+    if transpose == 0:
+        # partial transpose over system B for first choi
+        C1_TB = partial_transpose(C1, dims=[dim, dim], idx=0)
+        # in theory the order of matrix multiplication here could be inverted since we have a trace at the end.
+        C_12 = np.kron(IC,C1_TB) @ np.kron(C2, IA)
+    elif transpose == 1:
+        C2_TB = partial_transpose(C2, dims=[dim, dim], idx=1)
+        C_12 = np.kron(C2_TB,IA) @ np.kron(IC, C1)
+    else:
+        raise ValueError('only 0, 1 are allowed as tranpose values')
     # partial trace over system B for full expression
     C_12 = partial_trace(C_12, dims=[dim, dim, dim], idx=1)
     return C_12
@@ -471,6 +482,6 @@ def choi_composition(C1:np.ndarray, C2:np.ndarray, dim:int=None)->np.ndarray:
     # recall that we are trying to mimic the contrations that happen when multiplying two superoperators
     if not dim:
         dim = int(np.sqrt(C1.shape[0]))
-    C_12 = np.tensordot(C2.reshape([dim]*4), C1.reshape([dim]*4), axes=[(1,3),(0,2)]) # out_j (in_j) out_j* (in_j*), (out_i) in_i (out_i*) in_i* -> out_j out_j* in_i in_i*
+    C_12 = jnp.tensordot(C2.reshape([dim]*4), C1.reshape([dim]*4), axes=[(1,3),(0,2)]) # out_j (in_j) out_j* (in_j*), (out_i) in_i (out_i*) in_i* -> out_j out_j* in_i in_i*
     C_12 = C_12.transpose((0,2,1,3)).reshape([dim**2]*2) # out_j in_i out_j* in_i*
     return C_12

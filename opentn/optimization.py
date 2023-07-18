@@ -41,8 +41,20 @@ def cosine_similarity(A:np.ndarray,B:np.ndarray):
     # taking the real part as otherwise the grad calculation should guarantee cost_fn to be holomorphic
     return -(a@b.T.conj() / (jnp.linalg.norm(a)*jnp.linalg.norm(b))).real
 
-def model_Cs(Cs:np.ndarray):
+def X2C(Xs):
+    "transform a list of Cs onto a list of Cs"
+    Cs = []
+    for X in Xs:
+        # convert each of the X into a matrix
+        if X.ndim > 2:
+            X = jnp.reshape(a=X, newshape=[int(np.sqrt(X.size))]*2)
+        Cs.append(jnp.dot(X, X.T.conj()))
+    return Cs
+
+@jit
+def model_Cs(Xs:np.ndarray):
     "Composition of choi matrices. Cs are assumed to be PSD. Will return a Choi as well"
+    Cs = X2C(Xs)
     C_total  = Cs[0]
     for C in Cs[1:]:
         C_total = choi_composition(C_total, C)
@@ -69,17 +81,11 @@ def model_Zs(Wi:np.ndarray, Xj:np.ndarray, Xk:np.ndarray, N:int, order:np.ndarra
 @jit
 def model_Ys(Xs:np.ndarray):
     "Xs are assumed to be the square roots of the PSD matrices (Choi). We convert them here to superoperators"
-    Ys = []
-    for X in Xs:
-        # convert each of the X into a matrix
-        if X.ndim > 2:
-            X = jnp.reshape(a=X, newshape=[int(np.sqrt(X.size))]*2)
-        Y = jnp.dot(X, X.T.conj())
-        Ys.append(Y)
+    Cs = X2C(Xs)
     # convert to superoperators
-    Ys_super = [choi2super(choi=Y) for Y in Ys]
-    Y_total = Ys_super[0]
-    for Y in Ys_super[1:]:
+    Ys = [choi2super(choi=C) for C in Cs]
+    Y_total = Ys[0]
+    for Y in Ys[1:]:
         Y_total = jnp.dot(Y, Y_total)
     return Y_total
 

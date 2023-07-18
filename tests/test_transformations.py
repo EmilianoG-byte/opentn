@@ -35,6 +35,16 @@ class TestTransformations:
         assert np.allclose(C_link, C_tensor)
 
     @pytest.mark.parametrize("d, N", test_data_params)
+    def test_link_transposes(self, d, N):
+        dim = d**N
+        size = dim**2
+        C1 = np.random.normal(size=(size,size))
+        C2 = np.random.normal(size=(size,size))
+        C_link1 = link_product(C1=C1, C2=C2, dim=dim, transpose=0)
+        C_link2 = link_product(C1=C1, C2=C2, dim=dim, transpose=1)
+        assert np.allclose(C_link1, C_link2)
+
+    @pytest.mark.parametrize("d, N", test_data_params)
     def test_factorize_psd(self, d, N):
         dim = d**N
         size = dim**2
