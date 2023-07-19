@@ -30,8 +30,11 @@ def update(old_params:list, grads:list, rate:float):
     #     new_params.append(param - rate*grad)
     return old_params - rate*grads
 
-def frobenius_norm(A:np.ndarray,B:np.ndarray):
-    return jnp.linalg.norm(A-B, ord='fro')
+def frobenius_norm(A:np.ndarray,B:np.ndarray, squared:bool=False):
+    exp = 1
+    if squared:
+        exp = 2
+    return jnp.linalg.norm(A-B, ord='fro')**exp
 
 def cosine_similarity(A:np.ndarray,B:np.ndarray):
     # NOTE: changed the function to have the most negative when A = B

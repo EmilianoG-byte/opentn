@@ -280,7 +280,7 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
             except:
                 raise ValueError(f'invalid eigenvalue found: {eig}. input is not PSD')
             # see: https://stackoverflow.com/questions/15933741/how-do-i-catch-a-numpy-warning-like-its-an-exception-not-just-for-testing
-    return X
+    return X, eigvals
 
 def create_kitaev_liouvillians(N, d, gamma):
     ""
