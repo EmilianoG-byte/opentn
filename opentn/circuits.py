@@ -1,5 +1,4 @@
 import numpy as np
-import pytenet as ptn
 from pprint import pprint
 import qutip as qt
 from opentn.states.qubits import up, down, plus, minus, I, X, get_ladder_operator
