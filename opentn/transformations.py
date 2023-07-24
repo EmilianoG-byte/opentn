@@ -280,16 +280,12 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
             except:
                 raise ValueError(f'invalid eigenvalue found: {eig}. input is not PSD')
             # see: https://stackoverflow.com/questions/15933741/how-do-i-catch-a-numpy-warning-like-its-an-exception-not-just-for-testing
-    return X, eigvals
+    return X
 
-def create_kitaev_liouvillians(N, d, gamma):
-    ""
-    lowering = get_ladder_operator()
-    raising = get_ladder_operator(adjoint=True)
-    NN = 2
+
+def create_2local_liouvillians(Lnn:np.ndarray, N:int, d:int):
+    "create the liouvillians from a local two-sites lindbladian operator"
     
-    Lnn = jnp.sqrt(gamma)*(op2fullspace(raising, i=0, N=NN) + op2fullspace(raising, i=1, N=NN))@(op2fullspace(lowering, i=0, N=NN) - op2fullspace(lowering, i=1, N=NN))/4
-
     Lvec = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
     for i in range(0, N-1):
         Lvec += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)    
@@ -303,6 +299,39 @@ def create_kitaev_liouvillians(N, d, gamma):
         Lvec_even += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
 
     return Lvec, Lvec_odd, Lvec_even, Lnn
+
+def get_kitaev_nn_linbladian(gamma:float):
+    "Two sites libladian operator from kitaev wire noise model"
+    lowering = get_ladder_operator()
+    raising = get_ladder_operator(adjoint=True)
+    NN = 2
+    Lnn = jnp.sqrt(gamma)*(op2fullspace(raising, i=0, N=NN) + op2fullspace(raising, i=1, N=NN))@(op2fullspace(lowering, i=0, N=NN) - op2fullspace(lowering, i=1, N=NN))/4
+    return Lnn
+
+def create_kitaev_liouvillians(N:int, d:int, gamma:float):
+    "create the liouvillians corresponding to the kitaev wire noise model"
+    Lnn = get_kitaev_nn_linbladian(gamma)
+    Lvec, Lvec_odd, Lvec_even, Lnn = create_2local_liouvillians(Lnn, N, d)
+    return Lvec, Lvec_odd, Lvec_even, Lnn
+
+
+def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=2):
+    """
+    Create troter layers of (order)th-order by exponentiating the liouvillians.
+
+    NOTE: We assume liouvillians = [ Lvec, Lvec_odd, Levec_even ]
+    """
+    exp_superop = []
+    if order==2:
+        for i, op in enumerate(liouvillians):
+            if i == 1:
+                exp_superop.append(exp_operator_dt(op, tau/2, 'jax'))
+            else:
+                exp_superop.append(exp_operator_dt(op, tau, 'jax'))
+    else:
+        raise ValueError('ATM only order 2 is implemented')
+    return exp_superop
+
 
 def create_supertensored_from_local(localop:np.ndarray, N:int):
     "we asssume we have only one single operator tensored accross all sites to get the full superop"

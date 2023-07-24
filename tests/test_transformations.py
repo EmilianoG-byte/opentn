@@ -1,4 +1,4 @@
-from opentn.transformations import  super2choi, choi2super, convert_supertensored2liouvillianfull, convert_liouvillianfull2supertensored, link_product, choi_composition, create_kitaev_liouvillians, exp_operator_dt, factorize_psd,create_supertensored_from_local, lindbladian2super
+from opentn.transformations import  super2choi, choi2super, convert_supertensored2liouvillianfull, convert_liouvillianfull2supertensored, link_product, choi_composition, create_kitaev_liouvillians, exp_operator_dt, factorize_psd,create_supertensored_from_local, lindbladian2super, create_trotter_layers
 
 import numpy as np
 import jax.numpy as jnp
@@ -77,7 +77,9 @@ class TestTransformations:
 class TestLvec:
     "class to test liouvillians"
     test_data_params = [
-        (4, 2, 1e-2)
+        (4, 2, 1e-2),
+        (4, 2, 1),
+        (4, 2, 2)
     ]
     @pytest.mark.parametrize("N, d, gamma", test_data_params)
     def test_kitaev_liouvillians(self, N, d, gamma):
@@ -90,15 +92,36 @@ class TestLvec:
         assert np.allclose(Lvec, Lvec_odd+Lvec_even)
         
     test_data_params = [
-        (4, 2, 1e-2, 1)
+        (4, 2, 1e-2, 2),
+        (4, 2, 1e-2, 1),
+        (4, 2, 1, 0.5),
     ]
     @pytest.mark.parametrize("N, d, gamma, tau", test_data_params)
-    def test_super_liouvillians(self, N, d, gamma, tau):
+    def test_superop_ranks(self, N, d, gamma, tau):
         """
         Test lindbladian and liouvillian operators generated for the kitaev 2-site channel
         """
         Lvec, Lvec_odd, Lvec_even, Lnn = create_kitaev_liouvillians(N, d, gamma)
-        # now check the liovillians exp are created properly
+        # create exp superoperator
+        Lnn_super = lindbladian2super(Li=[Lnn])
+        Lnn_super = exp_operator_dt(Lnn_super, tau/2, 'jax')
+        
+        exp_Lvec, exp_Lodd, exp_Leven = create_trotter_layers(liouvillians=[Lvec, Lvec_odd, Lvec_even], tau=tau)
+        rank_nn = np.linalg.matrix_rank(super2choi(Lnn_super), tol=1e-10)
+
+        assert np.linalg.matrix_rank(super2choi(exp_Lodd), tol=1e-10) == 2*rank_nn
+        assert np.linalg.matrix_rank(super2choi(exp_Leven), tol=1e-10) == rank_nn
+        # NOTE: need to find a proper relation between individual layers rank and total rank.
+        # current one does not seem to apply
+        # assert np.linalg.matrix_rank(super2choi(exp_Lvec), tol=1e-10) == 4*rank_nn**3
+
+    @pytest.mark.parametrize("N, d, gamma, tau", test_data_params)
+    def test_supertensored_from_local(self, N, d, gamma, tau):
+        """
+        Test lindbladian and liouvillian operators generated for the kitaev 2-site channel
+        """
+        Lvec, Lvec_odd, Lvec_even, Lnn = create_kitaev_liouvillians(N, d, gamma)
+        # now check the liouvillians exp are created properly
         exp_Lvec_odd = exp_operator_dt(Lvec_odd, tau, 'jax') 
         
         superop = lindbladian2super(Li=[Lnn])
