@@ -1,7 +1,5 @@
 import numpy as np
-from pprint import pprint
-import qutip as qt
-from opentn.states.qubits import up, down, plus, minus, I, X, get_ladder_operator
+from opentn.states.qubits import up, down, I, X, get_ladder_operator
 from scipy.linalg import expm
 # implementing the partial trace function
 def partial_trace(rho: np.array, dimA: int, dimB: int) -> tuple:
