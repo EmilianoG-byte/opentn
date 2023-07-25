@@ -7,8 +7,10 @@ import scipy
 import numpy as np
 import jax.numpy as jnp
 import jax.scipy as jscipy
-from opentn.states.qubits import get_ladder_operator
 from itertools import chain
+import cvxpy as cp
+from scipy import sparse
+from opentn.states.qubits import get_ladder_operator
 
 from jax import config
 config.update("jax_enable_x64", True)
@@ -435,7 +437,7 @@ def link_product(C1:np.ndarray, C2:np.ndarray, dim:int=None, transpose:int=0)->n
     """
     link product is the composition of two individual choi matrices C1 and C2
     
-    We assume that C2 is applied after C1.
+    We assume that C2 is applied after C1, i.e. C_12 = C2 o C1 (from right to left)
 
     sources: 
     * https://arxiv.org/pdf/0904.4483.pdf
@@ -513,4 +515,67 @@ def choi_composition(C1:np.ndarray, C2:np.ndarray, dim:int=None)->np.ndarray:
         dim = int(np.sqrt(C1.shape[0]))
     C_12 = jnp.tensordot(C2.reshape([dim]*4), C1.reshape([dim]*4), axes=[(1,3),(0,2)]) # out_j (in_j) out_j* (in_j*), (out_i) in_i (out_i*) in_i* -> out_j out_j* in_i in_i*
     C_12 = C_12.transpose((0,2,1,3)).reshape([dim**2]*2) # out_j in_i out_j* in_i*
+    return C_12
+
+def link_product_cvxpy(C1, C2, dim:int=None, transpose:int=0, simplify:bool=False, tol:float=1e-8, optimization:bool=True):
+    """
+    link product but using only cvxpy atomic functions
+
+    args:
+    ---------
+    C1:
+        PSD choi matrix representing the first linear operator to be applied
+    C2:
+        PSD choi matrix representing the second linear operator to be applied (i.e. after C1)
+    dim:
+        Hilbert space dimension over which C1 and C2 act.
+        i.e. rho (density matrix) is in a Hilbert space of dimension: dim x dim = d^n  x d^n
+        with d the local dimension and n the number of sites over which it acts
+        chois should have dimensions = d^2n  x d^2n   
+    transpose:
+        whether the first [0] or second [1] channel will be the one transposed in the expression
+        In addition, this determines implicitely which one of C1 and C2 is the variable and 
+        whcich one is the constant. 
+        TODO: add a type checking to make sure we are not trasnpose a variable. This would increase the compilation time.
+    simplify:
+        whether to apply the small2zero function on the matrices before making them sparse
+    optimization:
+        whether we are using this expression within an optimization. If True, this would enforce
+        the transpose to be applied strictly on the constant and not on the variable.
+    
+    returns:
+    ---------
+    C_12:
+        cvxpy expression corresponding to the composition of C1 and C2
+
+    TODO: does using sparse identity in cp.kron help in the speed of something?
+    """
+    # importing here due to circular import error
+    from opentn.optimization import small2zero
+
+    I = np.eye(dim)
+    if transpose == 0:
+        # C1 is the constant and C2 is the variable
+        if optimization:
+             assert type(C1) != cp.expressions.variable.Variable, 'C1 is a variable. Only transpose constants to decrease compilation time'
+        C1_tb = partial_transpose(C1, dims=[dim, dim], idx=0)
+        IxC1_tb = np.kron(I, C1_tb)
+        if simplify:
+            IxC1_tb = small2zero(IxC1_tb, tol=tol)
+        IxC1_tb = sparse.csr_matrix(IxC1_tb)
+        IxC1_tb = IxC1_tb.astype(np.float64)
+        C_12 =  cp.partial_trace(IxC1_tb @ cp.kron(C2, I), dims=[dim, dim, dim], axis=1)
+    elif transpose == 1:
+        # C1 is the variable and C2 is the constant
+        if optimization:
+            assert type(C2) != cp.expressions.variable.Variable, 'C2 is a variable. Only transpose constants to decrease compilation time'
+        C2_tb = partial_transpose(C2, dims=[dim, dim], idx=1)
+        C2_tbxI = np.kron(C2_tb, I)
+        if simplify:
+            C2_tbxI = small2zero(C2_tbxI, tol=tol)
+        C2_tbxI = sparse.csr_matrix(C2_tbxI)
+        C2_tbxI = C2_tbxI.astype(np.float64)
+        C_12 =  cp.partial_trace(C2_tbxI @ cp.kron(I, C1), dims=[dim, dim, dim], axis=1)
+    else:
+        raise ValueError('only 0, 1 are allowed as tranpose values')
     return C_12
