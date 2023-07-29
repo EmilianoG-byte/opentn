@@ -1,5 +1,5 @@
 """
-A module containing the transformations between Open Quantum Systems representations and the 
+A module containing the transformations between Open Quantum Systems representations and the
 corresponding helping methods
 """
 
@@ -11,6 +11,7 @@ from itertools import chain
 import cvxpy as cp
 from scipy import sparse
 from opentn.states.qubits import get_ladder_operator
+from itertools import chain
 
 from jax import config
 config.update("jax_enable_x64", True)
@@ -28,14 +29,14 @@ def exp_operator_dt(op:np.ndarray, tau:float=1, library='jax')->np.ndarray:
 def lindbladian2super(H:np.ndarray = None, Li:list[np.ndarray] = [], dim:int=None)->np.ndarray:
     """
     Convert from lindbladian master equation to Liouvillian superoperator representation
-    
+
     Note: No exponential included. A row-wise vectorization is assumed
 
     args:
     ---------
     H:
         Hamiltonian operator
-    Li: 
+    Li:
         List of jump operators
     dim:
         Hilbert space dimension of the operators in H and Li
@@ -61,9 +62,9 @@ def lindbladian2super(H:np.ndarray = None, Li:list[np.ndarray] = [], dim:int=Non
 
 def super2choi(superop:np.ndarray, dim:int=None)->np.ndarray:
     """
-    Convert Superoperator to choi matrix. 
-    
-    'Super' is assumed to be actually on exp(super(lindbladian)). 
+    Convert Superoperator to choi matrix.
+
+    'Super' is assumed to be actually on exp(super(lindbladian)).
     A row-wise vectorization is assumed
 
     args:
@@ -89,13 +90,13 @@ def super2choi(superop:np.ndarray, dim:int=None)->np.ndarray:
 
 def choi2super(choi:np.ndarray, dim:int=None)->np.ndarray:
     """
-    Convert a Choi Matrix to its superoperator representation. 
-    
-    'Super' is assumed to be actually on exp(super(lindbladian)). 
+    Convert a Choi Matrix to its superoperator representation.
+
+    'Super' is assumed to be actually on exp(super(lindbladian)).
     A row-wise vectorization is assumed
 
     TODO: add argument N = sites. right now if dim is not passed, we assume
-    that we have only 1 site with dim = sqrt(choi.shape[0]). 
+    that we have only 1 site with dim = sqrt(choi.shape[0]).
     in reality we should satisfy the condition dim**(2*N) = choi.shape[0]
 
     args:
@@ -123,7 +124,7 @@ def choi2kraus(choi:np.ndarray, tol:float = 1e-9)->list[np.ndarray]:
     Convert a choi matrix to its kraus representation
 
     A tolerance is needed to avoid including small eigenvalues that are virtually zero.
-    A cholesky decomposition could be used if we could get rid of the small negative 
+    A cholesky decomposition could be used if we could get rid of the small negative
     eigenvalues in advance.
 
     args:
@@ -135,7 +136,7 @@ def choi2kraus(choi:np.ndarray, tol:float = 1e-9)->list[np.ndarray]:
 
     returns:
     ---------
-        List of kraus operators corrresponding to the quantum channel    
+        List of kraus operators corrresponding to the quantum channel
     """
     eigvals, eigvecs = np.linalg.eigh(choi)
     # print([eig for eig in eigvals if abs(eig)>tol])
@@ -147,7 +148,7 @@ def kraus2choi(kraus_list:list[np.ndarray])->np.ndarray:
     """
     Convert a list of Kraus operators into its choi matrix representation
 
-    row-wise vectorization assumed. 
+    row-wise vectorization assumed.
     Choi = \sum_k |Ek>> <<Ek|
     """
     if isinstance(kraus_list, np.ndarray):  # handle input of single kraus op
@@ -160,14 +161,14 @@ def kraus2choi(kraus_list:list[np.ndarray])->np.ndarray:
 def lindbladian2kraus(H:np.ndarray = None, Li:list[np.ndarray] = [], tau:int = 1, tol:float = 1e-9)->list[np.ndarray]:
     """
     Convert operators from the lindbladian representation to a list of kraus operators
-    
+
     Initial operators include Hamiltonian and jump operators
 
     args:
     ---------
     H:
         Hamiltonian operator
-    Li: 
+    Li:
         List of jump operators
     tau:
         Time step for exponential of liouvillian (super)operator
@@ -179,7 +180,7 @@ def lindbladian2kraus(H:np.ndarray = None, Li:list[np.ndarray] = [], tau:int = 1
     kraus_list:
         List contain the kraus operators corresponding to the lindbladian operators
     """
- 
+
     # assume H and Li elements have same shape if both are passed
     if H:
         dim = H.shape[0]
@@ -196,7 +197,7 @@ def lindbladian2kraus(H:np.ndarray = None, Li:list[np.ndarray] = [], tau:int = 1
 
 def vectorize(matrix:np.ndarray)->np.array:
     "vectorize matrix in a row-wise order"
-    return matrix.reshape(-1,1) # column vector  
+    return matrix.reshape(-1,1) # column vector
 
 def unvectorize(vector:np.ndarray)->np.ndarray:
     "unvectorize vector in row-wise manner. Square matrix assumed"
@@ -248,7 +249,7 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
     """
     factorize a positive-semidefinite-matrix (psd) into its "square root" matrix
     B and its adjoint.
-    
+
     i.e. psd = B @ B.conj().T
 
     args:
@@ -260,7 +261,7 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
         Wether to check if the input matrix `psd` is hermitian. np.linalg.eigh would fail if not.
     tol:
         Eigenvalues with absolute value below this number will be regarded as 0.
-   
+
     returns:
     ---------
     X:
@@ -276,7 +277,7 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
     for i, eig in enumerate(eigvals):
         if abs(eig) < tol:
             eig = 0
-        with np.errstate(invalid='raise'): 
+        with np.errstate(invalid='raise'):
             try:
                 X[:,i] = eigvecs[:,i]*np.sqrt(eig)
             except:
@@ -287,11 +288,11 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
 
 def create_2local_liouvillians(Lnn:np.ndarray, N:int, d:int):
     "create the liouvillians from a local two-sites lindbladian operator"
-    
+
     Lvec = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
     for i in range(0, N-1):
-        Lvec += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)    
-    
+        Lvec += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
+
     Lvec_odd = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
     for i in range(0, N, 2):
         Lvec_odd += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
@@ -395,7 +396,7 @@ def partial_transpose(op:np.ndarray, dims:list[int], idx:int=0):
     dims:
         list of dimensions fo the n subystems composing op.
     idx:
-        index of the subsytem over which to perform the partial transpose  
+        index of the subsytem over which to perform the partial transpose
 
     returns:
     ---------
@@ -419,7 +420,7 @@ def partial_trace(op:np.ndarray, dims:list[int], idx:int=0):
     dims:
         list of dimensions fo the n subystems composing op.
     idx:
-        index of the subsytem over which to perform the partial trace  
+        index of the subsytem over which to perform the partial trace
 
     returns:
     ---------
@@ -436,10 +437,10 @@ def partial_trace(op:np.ndarray, dims:list[int], idx:int=0):
 def link_product(C1:np.ndarray, C2:np.ndarray, dim:int=None, transpose:int=0)->np.ndarray:
     """
     link product is the composition of two individual choi matrices C1 and C2
-    
+
     We assume that C2 is applied after C1, i.e. C_12 = C2 o C1 (from right to left)
 
-    sources: 
+    sources:
     * https://arxiv.org/pdf/0904.4483.pdf
     * https://quantumcomputing.stackexchange.com/questions/10126/explicit-form-for-composition-of-choi-representation-quantum-channels/14586#14586
 
@@ -455,7 +456,7 @@ def link_product(C1:np.ndarray, C2:np.ndarray, dim:int=None, transpose:int=0)->n
         Hilbert space dimension over which C1 and C2 act.
         i.e. rho (density matrix) is in a Hilbert space of dimension: dim x dim = d^n  x d^n
         with d the local dimension and n the number of sites over which it acts
-        chois should have dimensions = d^2n  x d^2n   
+        chois should have dimensions = d^2n  x d^2n
     transpose:
         whether the first [0] or second [1] channel will be the one transposed in the expression
 
@@ -470,7 +471,7 @@ def link_product(C1:np.ndarray, C2:np.ndarray, dim:int=None, transpose:int=0)->n
 
     IC, IA = np.eye(dim), np.eye(dim)
 
-    
+
     if transpose == 0:
         # partial transpose over system B for first choi
         C1_TB = partial_transpose(C1, dims=[dim, dim], idx=0)
@@ -488,7 +489,7 @@ def link_product(C1:np.ndarray, C2:np.ndarray, dim:int=None, transpose:int=0)->n
 def choi_composition(C1:np.ndarray, C2:np.ndarray, dim:int=None)->np.ndarray:
     """
     Choi matrix of the composition of two individual choi matrices C1 and C2
-    
+
     Should be equivalent to link_product()
     We assume that C2 is applied after C1.
 
@@ -502,7 +503,7 @@ def choi_composition(C1:np.ndarray, C2:np.ndarray, dim:int=None)->np.ndarray:
         Hilbert space dimension over which C1 and C2 act.
         i.e. rho (density matrix) is in a Hilbert space of dimension: dim x dim = d^n  x d^n
         with d the local dimension and n the number of sites over which it acts
-        chois should have dimensions = d^2n  x d^2n   
+        chois should have dimensions = d^2n  x d^2n
 
     returns:
     ---------
@@ -531,15 +532,15 @@ def link_product_cvxpy(C1, C2, dim:int=None, transpose:int=0, optimization:bool=
         Hilbert space dimension over which C1 and C2 act.
         i.e. rho (density matrix) is in a Hilbert space of dimension: dim x dim = d^n  x d^n
         with d the local dimension and n the number of sites over which it acts
-        chois should have dimensions = d^2n  x d^2n   
+        chois should have dimensions = d^2n  x d^2n
     transpose:
         whether the first [0] or second [1] channel will be the one transposed in the expression
-        In addition, this determines implicitely which one of C1 and C2 is the variable and 
-        whcich one is the constant. 
+        In addition, this determines implicitely which one of C1 and C2 is the variable and
+        whcich one is the constant.
     optimization:
         whether we are using this expression within an optimization. If True, this would enforce
         the transpose to be applied strictly on the constant and not on the variable.
-    
+
     returns:
     ---------
     C_12:
@@ -547,7 +548,7 @@ def link_product_cvxpy(C1, C2, dim:int=None, transpose:int=0, optimization:bool=
 
     TODO: does using sparse identity in cp.kron help in the speed of something?
     """
-  
+
 
     I = np.eye(dim)
     if transpose == 0:
