@@ -72,7 +72,7 @@ class TestTransformations:
         size = d**(2*N)
         superop = np.random.normal(size=(size,size))
         assert np.allclose(superop, convert_liouvillianfull2supertensored(convert_supertensored2liouvillianfull(superop, N, d), N, d))
-        
+
 
 class TestLvec:
     "class to test liouvillians"
@@ -86,11 +86,11 @@ class TestLvec:
         """
         Test lindbladian and liouvillian operators generated for the kitaev 2-site channel
         """
-        
+
         Lvec, Lvec_odd, Lvec_even, Lnn = create_kitaev_liouvillians(N, d, gamma)
         # operators have the right shape by construction.
         assert np.allclose(Lvec, Lvec_odd+Lvec_even)
-        
+
     test_data_params = [
         (4, 2, 1e-2, 2),
         (4, 2, 1e-2, 1),
@@ -105,11 +105,12 @@ class TestLvec:
         # create exp superoperator
         Lnn_super = lindbladian2super(Li=[Lnn])
         Lnn_super = exp_operator_dt(Lnn_super, tau/2, 'jax')
-        
+
         exp_Lvec, exp_Lodd, exp_Leven = create_trotter_layers(liouvillians=[Lvec, Lvec_odd, Lvec_even], tau=tau)
         rank_nn = np.linalg.matrix_rank(super2choi(Lnn_super), tol=1e-10)
 
         assert np.linalg.matrix_rank(super2choi(exp_Lodd), tol=1e-10) == 2*rank_nn
+        # TODO: square
         assert np.linalg.matrix_rank(super2choi(exp_Leven), tol=1e-10) == rank_nn
         # NOTE: need to find a proper relation between individual layers rank and total rank.
         # current one does not seem to apply
@@ -122,13 +123,13 @@ class TestLvec:
         """
         Lvec, Lvec_odd, Lvec_even, Lnn = create_kitaev_liouvillians(N, d, gamma)
         # now check the liouvillians exp are created properly
-        exp_Lvec_odd = exp_operator_dt(Lvec_odd, tau, 'jax') 
-        
+        exp_Lvec_odd = exp_operator_dt(Lvec_odd, tau, 'jax')
+
         superop = lindbladian2super(Li=[Lnn])
         superop = exp_operator_dt(superop, tau, 'jax')
         super_exp_full = create_supertensored_from_local(superop, N)
         super_exp_full = convert_supertensored2liouvillianfull(super_exp_full, N, d)
-        
+
         assert super_exp_full.shape == exp_Lvec_odd.shape
         assert np.allclose(super_exp_full, exp_Lvec_odd)
 

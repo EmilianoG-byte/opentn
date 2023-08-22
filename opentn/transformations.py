@@ -572,3 +572,13 @@ def link_product_cvxpy(C1, C2, dim:int=None, transpose:int=0, optimization:bool=
     else:
         raise ValueError('only 0, 1 are allowed as tranpose values')
     return C_12
+
+def choi_composition_3Y_cvxpy(C1, C2, C3, dim:int):
+    """
+    calculate the composition of 3 choi channels. This corresponds to the 3 layers in the 2nd order troter decomposition
+    """
+    I = sparse.eye(dim)
+    C_13_tbtc = np.kron(partial_transpose(C3, dims=[dim]*2, idx=1), partial_transpose(C1, dims=[dim]*2, idx=0))
+    C_13_tbtc = sparse.csr_matrix(C_13_tbtc).astype(np.float64)
+    C_123 = cp.partial_trace(cp.partial_trace(cp.kron(cp.kron(I, C2),I) @ C_13_tbtc, dims=[dim]*4, axis=1), dims=[dim]*3, axis=1)
+    return C_123
