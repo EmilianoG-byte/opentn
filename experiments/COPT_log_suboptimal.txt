@@ -1,0 +1,68 @@
+-------------------------------------------------------------------------------
+                                Numerical solver                               
+-------------------------------------------------------------------------------
+(CVXPY) Jul 26 09:59:13 PM: Invoking solver COPT  to obtain a solution.
+Cardinal Optimizer v6.5.6. Build date Jul 21 2023
+Copyright Cardinal Operations 2023. All Rights Reserved
+
+Setting parameter 'Logging' to 1
+Setting parameter 'SDPMethod' to 0
+Model fingerprint: fa62bce8
+
+Using Cardinal Optimizer v6.5.6 on macOS
+Hardware has 8 cores and 8 threads. Using instruction set X86_SSE4_2 (8)
+Maximizing an SDP problem
+
+The original problem has:
+    1 rows, 65537 columns and 1 non-zero elements
+    1 PSD columns
+    32896 PSD constraints
+    1 cones
+
+Using Primal-Dual Method
+
+Starting barrier solver using 8 threads
+
+Problem info:
+Range of matrix coefficients:    [1e-10,1e+00]
+Range of rhs coefficients:       [1e+00,1e+00]
+Range of bound coefficients:     [0e+00,0e+00]
+Range of cost coefficients:      [3e-10,1e-01]
+
+Factor info:
+Number of dense columns:         1
+Number of matrix entries:        5.411e+08
+Number of factor entries:        5.412e+08
+Number of factor flops:          1.187e+13
+
+Iter       Primal.Obj         Dual.Obj      Compl  Primal.Inf  Dual.Inf    Time
+   0  +0.00000000e+00  +0.00000000e+00   2.59e+02    1.00e+00  1.41e+00    112s
+   1  -7.53536139e+00  -1.13175126e+01   2.43e+02    4.99e-01  7.06e-01    253s
+   2  -2.94158438e+00  -4.43519776e+00   2.06e+02    1.87e-01  2.65e-01    409s
+   3  -4.47234153e-01  -6.66508279e-01   9.41e+01    2.88e-02  4.07e-02    569s
+   4  -7.99491252e-02  -1.20535521e-01   1.73e+01    5.16e-03  7.29e-03    732s
+   5  -4.44609142e-03  -7.15983189e-03   1.23e+00    3.45e-04  4.88e-04    896s
+   6  -3.07772990e-04  -4.76874234e-04   7.77e-02    2.15e-05  3.04e-05   1056s
+   7  -6.27176468e-06  -1.03199557e-05   1.86e-03    5.15e-07  7.28e-07   1215s
+   8  -7.47913286e-07  -1.18645358e-06   2.04e-04    5.58e-08  7.90e-08   1377s
+   9  -9.42231318e-08  -1.48210749e-07   2.51e-05    6.88e-09  9.72e-09   1541s
+  10  -5.62207792e-08  -7.08123418e-08   6.83e-06    2.16e-09  2.69e-09   1707s
+  11  -9.15682177e-08  -9.69749460e-08   3.34e-06    7.91e-10  9.82e-10   1873s
+
+Barrier status:                  OPTIMAL
+Primal objective:                -9.15682177e-08
+Dual objective:                  -9.69749460e-08
+Duality gap (abs/rel):           5.41e-09 / 5.41e-09
+Primal infeasibility (abs/rel):  7.91e-10 / 7.91e-10
+Dual infeasibility (abs/rel):    9.82e-10 / 9.82e-10
+
+Solving finished
+Status: Optimal  Objective: 9.1568217647e-08  Iterations: 11  Time: 1874.25s
+-------------------------------------------------------------------------------
+                                    Summary                                    
+-------------------------------------------------------------------------------
+(CVXPY) Jul 26 10:30:29 PM: Problem status: optimal
+(CVXPY) Jul 26 10:30:29 PM: Optimal value: 1.010e-07
+(CVXPY) Jul 26 10:30:29 PM: Compilation took 8.542e-02 seconds
+(CVXPY) Jul 26 10:30:29 PM: Solver (including time spent in interface) took 1.875e+03 seconds
+1.009988692473399e-07

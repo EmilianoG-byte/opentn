@@ -45,7 +45,7 @@ def cosine_similarity(A:np.ndarray,B:np.ndarray):
     return -(a@b.T.conj() / (jnp.linalg.norm(a)*jnp.linalg.norm(b))).real
 
 def X2C(Xs):
-    "transform a list of Cs onto a list of Cs"
+    "transform a list of Xs onto a list of Cs"
     Cs = []
     for X in Xs:
         # convert each of the X into a matrix

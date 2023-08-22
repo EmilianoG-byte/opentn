@@ -517,7 +517,7 @@ def choi_composition(C1:np.ndarray, C2:np.ndarray, dim:int=None)->np.ndarray:
     C_12 = C_12.transpose((0,2,1,3)).reshape([dim**2]*2) # out_j in_i out_j* in_i*
     return C_12
 
-def link_product_cvxpy(C1, C2, dim:int=None, transpose:int=0, simplify:bool=False, tol:float=1e-8, optimization:bool=True):
+def link_product_cvxpy(C1, C2, dim:int=None, transpose:int=0, optimization:bool=True):
     """
     link product but using only cvxpy atomic functions
 
@@ -536,9 +536,6 @@ def link_product_cvxpy(C1, C2, dim:int=None, transpose:int=0, simplify:bool=Fals
         whether the first [0] or second [1] channel will be the one transposed in the expression
         In addition, this determines implicitely which one of C1 and C2 is the variable and 
         whcich one is the constant. 
-        TODO: add a type checking to make sure we are not trasnpose a variable. This would increase the compilation time.
-    simplify:
-        whether to apply the small2zero function on the matrices before making them sparse
     optimization:
         whether we are using this expression within an optimization. If True, this would enforce
         the transpose to be applied strictly on the constant and not on the variable.
@@ -550,8 +547,7 @@ def link_product_cvxpy(C1, C2, dim:int=None, transpose:int=0, simplify:bool=Fals
 
     TODO: does using sparse identity in cp.kron help in the speed of something?
     """
-    # importing here due to circular import error
-    from opentn.optimization import small2zero
+  
 
     I = np.eye(dim)
     if transpose == 0:
@@ -560,8 +556,6 @@ def link_product_cvxpy(C1, C2, dim:int=None, transpose:int=0, simplify:bool=Fals
              assert type(C1) != cp.expressions.variable.Variable, 'C1 is a variable. Only transpose constants to decrease compilation time'
         C1_tb = partial_transpose(C1, dims=[dim, dim], idx=0)
         IxC1_tb = np.kron(I, C1_tb)
-        if simplify:
-            IxC1_tb = small2zero(IxC1_tb, tol=tol)
         IxC1_tb = sparse.csr_matrix(IxC1_tb)
         IxC1_tb = IxC1_tb.astype(np.float64)
         C_12 =  cp.partial_trace(IxC1_tb @ cp.kron(C2, I), dims=[dim, dim, dim], axis=1)
@@ -571,8 +565,6 @@ def link_product_cvxpy(C1, C2, dim:int=None, transpose:int=0, simplify:bool=Fals
             assert type(C2) != cp.expressions.variable.Variable, 'C2 is a variable. Only transpose constants to decrease compilation time'
         C2_tb = partial_transpose(C2, dims=[dim, dim], idx=1)
         C2_tbxI = np.kron(C2_tb, I)
-        if simplify:
-            C2_tbxI = small2zero(C2_tbxI, tol=tol)
         C2_tbxI = sparse.csr_matrix(C2_tbxI)
         C2_tbxI = C2_tbxI.astype(np.float64)
         C_12 =  cp.partial_trace(C2_tbxI @ cp.kron(I, C1), dims=[dim, dim, dim], axis=1)
