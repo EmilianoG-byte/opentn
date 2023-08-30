@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from typing import Callable
 from jax import jit
-from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition
+from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition, ortho2choi
 import cvxpy as cvx
 
 from jax import config
@@ -91,6 +91,12 @@ def model_Ys(Xs:np.ndarray):
     for Y in Ys[1:]:
         Y_total = jnp.dot(Y, Y_total)
     return Y_total
+
+@jit
+def model_Ys_stiefel(Xs:np.ndarray):
+    "Xs are assume to be the squared roots of the PSD matrices with axis 1,2 swaped to make them orthonormal"
+    Xs_choi = [ortho2choi(x) for x in Xs]
+    return model_Ys(Xs_choi)
 
 def compute_loss(xi:np.ndarray, loss_fn, model, exact:np.ndarray, **kwargs):
     """

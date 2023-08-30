@@ -582,3 +582,79 @@ def choi_composition_3Y_cvxpy(C1, C2, C3, dim:int):
     C_13_tbtc = sparse.csr_matrix(C_13_tbtc).astype(np.float64)
     C_123 = cp.partial_trace(cp.partial_trace(cp.kron(cp.kron(I, C2),I) @ C_13_tbtc, dims=[dim]*4, axis=1), dims=[dim]*3, axis=1)
     return C_123
+
+def choi2ortho(x:np.ndarray, dim:int=None):
+    """
+    transform the x matrix that factorize a choi matrix into its isometric form (Stiefel manifold)
+    """
+    assert x.ndim == 2, "x should be a matrix"
+    # local dimension (first dimension of x should be dim^2)
+    if not dim:
+        dim = int(np.sqrt(x.shape[0]))
+    # kraus dimension, determines rank
+    k = x.shape[1]
+    # reshape the x matrix from (dim_out, dim_in, k) to (dim_out, k, dim_in)
+    x = np.reshape(x, [dim, dim, k])
+    x = x.swapaxes(1,2).reshape([dim*k, dim])
+    return x
+
+def ortho2choi(x:np.ndarray, dim:int=None):
+    """
+    transform the x matrix belonging to the Stiefel Manifold (isometric) into its choi form
+    """
+    if not dim:
+        dim = x.shape[1]
+    # kraus dimension, determines rank
+    k = int(x.shape[0]/dim)
+    x = np.reshape(x, [dim, k, dim])
+    x = x.swapaxes(1,2).reshape([dim**2, k])
+    return x
+
+def split_matrix_svd(op:np.ndarray, chi_max:int=2, eps:float=1e-9):
+    """
+    Split operator (matrix) by singular value decomposition,
+    and truncate small singular values based on tolerance.
+
+    NOTE: we sum the singular values greater than tolerance eps and determine
+    if there are less of these or chi_max, and use the minimum
+
+    args:
+    ---------
+    op: 
+        matrix of which singular values will be truncated
+    chi_max:
+        maximum number of singular values that will be kept
+    eps:
+        tolerance outside of which singular values will not be kept.
+        See calculation below on how to determine how many singular values
+        to actually keep
+
+    returns:
+    ---------
+    u, v, s:
+        isometries u, v and list of singular values s
+    """
+    assert op.ndim == 2
+    u, s, v = np.linalg.svd(op, full_matrices=False)
+    # determine which parameter gives the least nunber of singular values to keep
+    chi_keep = min(chi_max, np.sum(s > eps))
+    assert chi_keep >=1
+
+    # keep the largest `chi_keep` singular values
+    idx_keep = np.argsort(s)[::-1][:chi_keep]  
+    u = u[:, idx_keep]
+    v = v[idx_keep, :]
+    s = s[idx_keep]
+    return u, s, v
+
+
+def factorize_psd_truncated(psd:np.ndarray, chi_max:int=2, eps:float=1e-9):
+    """
+    Factorize psd matrix truncating the singular values based on tolerance parameters
+    
+    More robust to small values than cholesky decomposition from numpy.
+    
+    Returns x' such that psd ≈ x' @ x'.conj().T
+    """
+    x, s, xdg = split_matrix_svd(psd, chi_max, eps)
+    return x@np.diag(np.sqrt(s))
