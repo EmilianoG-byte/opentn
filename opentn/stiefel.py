@@ -59,7 +59,7 @@ def retract_x(x_list, eta):
     eta = np.reshape(eta, ((n,) + x_list[0].shape))
     return [polar_decomposition_stiefel(x_list[j], eta[j]) for j in range(n)]
 
-def check_isometry(x_list:list[np.ndarray], show_idx:bool=False):
+def is_isometry(x_list:list[np.ndarray], show_idx:bool=False):
     "checks if the list of operators belong to the Stiefel manifold, i.e. are isometries"
     # we assume that all operators are of the same dimensions
     dim = x_list[0].shape[1]
@@ -74,6 +74,19 @@ def check_isometry(x_list:list[np.ndarray], show_idx:bool=False):
     else:
         return are_isometry
     
+def is_hermitian(H:np.ndarray):
+    "checks if a matrix is hermitian or not. If not, return norm between H and H+"
+    hermitian = np.allclose(H.conj().T, H, atol=1e-8)
+    if hermitian:
+        return hermitian
+    else:
+        return hermitian, np.linalg.norm(H - H.conj().T) 
+    
+def is_in_tangent_space(X:np.ndarray, Z:np.ndarray):
+    "checks if the matrix Z is in the tangent space of isometry X"
+    assert X.ndim == Z.ndim == 2, "only matrices allowed"
+    d = X.shape[1]
+    return np.allclose(X.conj().T @ Z + Z.conj().T @ X, np.zeros((d,d)))
 
 def gradient_stiefel(xi, func):
     "compute riemannian gradient for all xi, returning a list"
