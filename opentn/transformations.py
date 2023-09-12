@@ -657,4 +657,4 @@ def factorize_psd_truncated(psd:np.ndarray, chi_max:int=2, eps:float=1e-9):
     Returns x' such that psd ≈ x' @ x'.conj().T
     """
     x, s, xdg = split_matrix_svd(psd, chi_max, eps)
-    return x@np.diag(np.sqrt(s))
+    return (x@np.diag(np.sqrt(s))).astype(np.float64)
