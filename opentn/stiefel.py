@@ -201,6 +201,11 @@ def riemannian_hessian(func, x, vector=False):
     x_comps = [get_orthogonal_complement(xi) for xi in x]
     hessian_columns = []
 
+    if not all([(op.dtype == np.float64) for op in x]):
+        print('complex value found')
+        x = [op.astype(np.float64) for op in x]
+
+
     for i in range(n):
         print('column :',i)
         dxk_size = x[i].size
