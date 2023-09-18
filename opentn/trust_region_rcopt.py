@@ -45,6 +45,7 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, **k
         elif rho > 0.75 and on_boundary:
             # enlarge radius
             radius = min(2 * radius, maxradius)
+        print('radius', radius)
         if rho > rho_trust:
             x = x_next
         if gfunc is not None:
