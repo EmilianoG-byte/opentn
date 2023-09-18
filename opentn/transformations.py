@@ -199,11 +199,16 @@ def vectorize(matrix:np.ndarray)->np.array:
     "vectorize matrix in a row-wise order"
     return matrix.reshape(-1,1) # column vector
 
-def unvectorize(vector:np.ndarray)->np.ndarray:
+def unvectorize(vector:np.ndarray, d0=None, d1=None)->np.ndarray:
     "unvectorize vector in row-wise manner. Square matrix assumed"
-    dim = int(np.sqrt(vector.size))
-    matrix = vector.reshape((dim,dim))
-    return matrix
+    if not d0 and not d1:
+        d0 = int(np.sqrt(vector.size))
+        d1 = d0
+    elif not d0:
+        d0 = int(vector.size/d1)
+    elif not d1:
+        d1 = int(vector.size/d0)
+    return vector.reshape((d0,d1))
 
 def vectorize_hamiltonian(H:np.ndarray, dim:int=2)->np.ndarray:
     "Vectorize Hamiltonian.  Here we assume the i is included in the hamiltonian"
@@ -658,3 +663,10 @@ def factorize_psd_truncated(psd:np.ndarray, chi_max:int=2, eps:float=1e-9):
     """
     x, s, xdg = split_matrix_svd(psd, chi_max, eps)
     return (x@np.diag(np.sqrt(s))).astype(np.float64)
+
+def vec2list(vector:np.ndarray, sizes:list[int])->list:
+    "split a vector into smaller vectors based on sizes in `sizes` list"
+    vec_list = []
+    for i, size in enumerate(sizes):
+        vec_list.append(vector[size*i:size*(i+1)])
+    return vec_list

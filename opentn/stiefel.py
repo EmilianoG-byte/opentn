@@ -8,9 +8,9 @@ from jax import config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import numpy as np
-from opentn.transformations import factorize_psd_truncated
+from opentn.transformations import factorize_psd_truncated, vec2list, unvectorize
 
-from scipy.linalg import fractional_matrix_power
+from scipy.linalg import fractional_matrix_power, polar
 
 def project(X:np.ndarray, Z:np.ndarray):
     """
@@ -101,7 +101,19 @@ def get_arbitrary(X_comp:np.ndarray, Z:np.ndarray, X:np.ndarray=None, Px_comp:np
      # TODO: add back the conj
     return X_comp.T @ Px_comp @ Z
 
-def get_tangent_parametrization(X:np.ndarray, Z:np.ndarray, X_comp:np.ndarray = None ,stack:bool=True):
+def parametrizations_from_vector(param_vec:np.ndarray, shapes:list[tuple[int]])->np.ndarray:
+    "Convert a long vector that includes all the parametrizations of the tangent spaces onto a list of individual parametrizations"
+    param_vec_lst = vec2list(param_vec, sizes=[np.prod(shape) for shape in shapes]) # len(shapes), size
+    # now I should divide each of the elements onto 2 vectors of size p**2, (n-p)p and unvectorize them
+    params = []
+    for i, shape in enumerate(shapes):
+        n,p = shape
+        A_vec = param_vec_lst[i][:p**2]
+        B_vec = param_vec_lst[i][p**2:]
+        params.append((unvectorize(A_vec, p, p),unvectorize(B_vec, n-p, p)))
+    return params
+
+def parametrization_from_tangent(X:np.ndarray, Z:np.ndarray, X_comp:np.ndarray = None ,stack:bool=True):
     """
     Get the A and B matrices that parametrize the Z matrix of the tangent space of stiefel manifold at X
     
@@ -120,8 +132,15 @@ def get_tangent_parametrization(X:np.ndarray, Z:np.ndarray, X_comp:np.ndarray = 
         return np.vstack([A,B], dtype=np.float64)
     else:
         return A, B
+    
+def tangent_from_parametrization(X:np.ndarray, A:np.ndarray, B:np.ndarray)->np.ndarray:
+    "Get the tangent vector corresponding to the parametrization A (skew symmetric) and B (arbitrary)"
+    n,p = X.shape
+    assert A.shape == (p,p), "Wrong shape for A"
+    assert B.shape == (n-p, p), "Wrong shape for B"
+    return X@A + get_orthogonal_complement(X)@B
 
-def polar_decomposition_stiefel(X, Z):
+def polar_decomposition_stiefel(X:np.ndarray, Z:np.ndarray):
     """
     Retraction based on polar decomposition of Z at tangent space of matrix X from Stiefel manifold
     
@@ -132,14 +151,23 @@ def polar_decomposition_stiefel(X, Z):
     # TODO: add back the conj
     return (X+Z)@fractional_matrix_power(np.eye(d) + Z.T@Z, -0.5)
 
-def retract_x(x_list, eta):
+def polar_decomposition_rectangular(X:np.ndarray, Z:np.ndarray):
+    """
+    Retraction based on canonical polar decomposition of scipy
+    
+    [1] https://page.math.tu-berlin.de/~mehl/papers/hmt1.pdf
+    [2] https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.polar.html
+    """
+    return polar(X+Z)[0] 
+
+def retract_stiefel(x_list:list[np.ndarray], eta:np.ndarray):
     "retraction from tanget space at x to original manifold of x"
-    n = len(x_list)
     # here we have to assume that all x have the same shape 
-    eta = np.reshape(eta, ((n,) + x_list[0].shape))
+    params_list =  parametrizations_from_vector(eta, shapes=[op.shape for op in x_list]) # np.reshape(eta, ((n,) + x_list[0].shape))
     # in theory if we want to emulate what is going on with unitaries, we have to:
     # project the eta[j] onto the tangent space of the vlist[j].
-    return [polar_decomposition_stiefel(x_list[j], eta[j]) for j in range(n)]
+    dxlist = [tangent_from_parametrization(x, *params) for x,params in zip(x_list, params_list)]
+    return [polar_decomposition_stiefel(x, z) for x,z in zip(x_list, dxlist)] # stack gives problem with tree strcuture of jax
 
 def is_isometry(x_list:list[np.ndarray], show_idx:bool=False):
     "checks if the list of operators belong to the Stiefel manifold, i.e. are isometries"
@@ -188,7 +216,7 @@ def gradient_stiefel_vec(xi, func):
     "compute the vectorized gradient for all xi"
     # NOTE: changing to store only parametrization here to adhere to trust_region function 
     return jnp.vstack([
-        get_tangent_parametrization(X=x, Z=grad, stack=True) 
+        parametrization_from_tangent(X=x, Z=grad, stack=True) 
     for grad, x in zip(gradient_stiefel(xi, func), xi)]).reshape(-1)
 
 
@@ -224,9 +252,9 @@ def riemannian_hessian(func, x, vector=False):
                 # we need to project each of them and store in an array that has information about the index k
                 if vector:            
                     # NOTE: changing to store only parametrization here to adhere to trust_region function 
-                    xi_dxk[j][:,k] +=  get_tangent_parametrization(X=x[j], Z=project(x[j],element), X_comp=x_comps[j], stack=True).reshape(-1).astype(np.float64)
+                    xi_dxk[j][:,k] +=  parametrization_from_tangent(X=x[j], Z=project(x[j],element), X_comp=x_comps[j], stack=True).reshape(-1).astype(np.float64)
                 else:
-                    xi_dxk[j][:,:,k] += get_tangent_parametrization(X=x[j], Z=project(x[j],element), stack=True)
+                    xi_dxk[j][:,:,k] += parametrization_from_tangent(X=x[j], Z=project(x[j],element), stack=True)
         hessian_columns.append(xi_dxk)
     return hessian_columns
 
