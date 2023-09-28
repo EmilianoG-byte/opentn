@@ -128,6 +128,7 @@ def parametrization_from_tangent(X:np.ndarray, Z:np.ndarray, X_comp:np.ndarray =
 
     A = get_symmetric(X, Z)
     B = get_arbitrary(X_comp=X_comp, Z=Z, X=X)
+    # print(A.dtype, B.dtype)
     if stack:
         return np.vstack([A,B], dtype=np.float64)
     else:
@@ -167,7 +168,7 @@ def retract_stiefel(x_list:list[np.ndarray], eta:np.ndarray):
     # in theory if we want to emulate what is going on with unitaries, we have to:
     # project the eta[j] onto the tangent space of the vlist[j].
     dxlist = [tangent_from_parametrization(x, *params) for x,params in zip(x_list, params_list)]
-    return [polar_decomposition_stiefel(x, z) for x,z in zip(x_list, dxlist)] # stack gives problem with tree strcuture of jax
+    return [polar_decomposition_rectangular(x, z) for x,z in zip(x_list, dxlist)] # stack gives problem with tree strcuture of jax
 
 def is_isometry(x_list:list[np.ndarray], show_idx:bool=False):
     "checks if the list of operators belong to the Stiefel manifold, i.e. are isometries"
@@ -206,18 +207,46 @@ def is_symmetric(C:np.ndarray):
     "checks if a matrix is symmetric or not"
     return np.allclose(C, C.conj().T)
 
+def gradient_metric(x:np.ndarray, gradient:np.ndarray, alpha0:int=1, alpha1:int=1):
+    """
+    riemannian gradient of gradient at X of Stiefel manifold. Metric determined by (alpha)_i
+    
+    embedded (euclidean):
+    alpha0 = alpha1 = 1
+
+    canonical:
+    alpha0 = 1, alpha1 = 1/2
+    """
+    return (1/alpha0) * gradient + 0.5 * ((1/alpha1) - (2/alpha0)) * x @ x.T @ gradient - 0.5 * (1/alpha1) * x @ gradient.T @ x
+
 def gradient_stiefel(xi, func):
     "compute riemannian gradient for all xi, returning a list"
     Zi = jax.grad(func)(xi)
     return [project(X, Z)
     for X,Z in zip(xi, Zi)]
 
-def gradient_stiefel_vec(xi, func):
+def gradient_canonical(xi, func):
+    """
+    returns the gradient given implicitely by the use of the canonical metric in tangent space. 
+    From https://math.mit.edu/~edelman/publications/geometry_of_algorithms.pdf eq.2.53
+    FY - YFYTY.
+    """
+    zi = jax.grad(func)(xi)
+    return [z - x@z.T@x for x,z in zip(xi, zi)]
+
+def gradient_stiefel_vec(xi, func, metric='euclidean'):
     "compute the vectorized gradient for all xi"
     # NOTE: changing to store only parametrization here to adhere to trust_region function 
+    if metric == 'euclidean':
+        zi = gradient_stiefel(xi, func)
+    elif metric == 'canonical':
+        zi = gradient_canonical(xi, func)
+    else:
+        raise ValueError(f'{metric} is not a valid metric value')
     return jnp.vstack([
         parametrization_from_tangent(X=x, Z=grad, stack=True) 
-    for grad, x in zip(gradient_stiefel(xi, func), xi)]).reshape(-1)
+    for x, grad in zip(xi, zi)]).reshape(-1)
+
 
 
 def riemannian_hessian(func, x, vector=False):
@@ -259,12 +288,15 @@ def riemannian_hessian(func, x, vector=False):
     return hessian_columns
 
 
-def riemannian_hessian_vec(func, x):
+def riemannian_hessian_vec(func, x, transpose:bool=False):
     "riemannian hessian matrix of func evaluated at list of Stiefel matrices x"
     hessian_columns = riemannian_hessian(func, x, vector=True) 
     n = len(x)
     size_vec = hessian_columns[0][0].shape[0]
-
+    # NOTE on shape: 0th: column, 1st: row, 2,3: from (size, size) from jvp of grad_func
     hessian_full = np.stack(hessian_columns, axis=1) # n, n, size_vec, size_vec
     hessian_full = hessian_full.swapaxes(1,2).reshape(n*size_vec, n*size_vec)
+    if transpose:
+        print('Transposing')
+        hessian_full = hessian_full.T
     return hessian_full

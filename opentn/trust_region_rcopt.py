@@ -31,6 +31,9 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, **k
         g_iter.append(gfunc(x))
     for k in range(niter):
         print(f'iteration: {k}')
+        if not all([(op.dtype == np.float64) for op in x]):
+            print('complex value found in outer loop')
+            x = [op.astype(np.float64) for op in x]
         grad = gradfunc(x)
         hess = hessfunc(x)
         eta, on_boundary = truncated_cg(grad, hess, radius, **tcg_kwargs)
@@ -50,7 +53,7 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, **k
             x = x_next
         if gfunc is not None:
             g_iter.append(gfunc(x))
-    return x, f_iter, g_iter
+    return x, f_iter, g_iter, radius
 
 
 def truncated_cg(grad, hess, radius, **kwargs):
