@@ -209,8 +209,9 @@ def is_symmetric(C:np.ndarray):
 
 def gradient_metric(x:np.ndarray, gradient:np.ndarray, alpha0:int=1, alpha1:int=1):
     """
-    riemannian gradient of gradient at X of Stiefel manifold. Metric determined by (alpha)_i
+    riemannian gradient at x of Stiefel manifold. Metric determined by (alpha)_i
     
+    See section 5 of https://link.springer.com/epdf/10.1007/s10957-023-02242-z?sharing_token=jNw8qcq4tY-JPigTOShOyve4RwlQNchNByi7wbcMAY7kjfPNTsczaium2SDXasEb5TrNgE65puF_yyAi9lcZuzAlYtAYWMvC_0NZLZqqhJSzU3NQTEjdZ-b40F1KWSWHs7seC9kT8XtPW1N_7VFWplF12YK022IazHqGgPvHONY%3D
     embedded (euclidean):
     alpha0 = alpha1 = 1
 

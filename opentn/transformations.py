@@ -670,3 +670,17 @@ def vec2list(vector:np.ndarray, sizes:list[int])->list:
     for i, size in enumerate(sizes):
         vec_list.append(vector[size*i:size*(i+1)])
     return vec_list
+
+def all2samesize(matrices:list[np.ndarray], dim:int=1, size:int=None):
+    "ensures all matrices  have the same size on specified dimension by padding with zeros the smaller matrices"
+    assert all([matrix.ndim == 2 for matrix in matrices]), 'only matrices allowed'
+    init_sizes = [op.shape[dim] for op in matrices]
+    if size is None:
+        size = np.max(init_sizes)
+    else:
+        assert size >= np.max(init_sizes), f'{size} is not bigger than the max size of all matrices'
+    uniform_matrices = []
+    for i, matrix in enumerate(matrices):
+        npad =  tuple((0,size-init_sizes[i]) if j==dim else (0,0) for j in range(2)) # ((top, bottom), (left, right))
+        uniform_matrices.append(np.pad(matrix, pad_width=npad, mode='constant', constant_values=0))
+    return uniform_matrices
