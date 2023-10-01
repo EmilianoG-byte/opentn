@@ -684,3 +684,15 @@ def all2samesize(matrices:list[np.ndarray], dim:int=1, size:int=None):
         npad =  tuple((0,size-init_sizes[i]) if j==dim else (0,0) for j in range(2)) # ((top, bottom), (left, right))
         uniform_matrices.append(np.pad(matrix, pad_width=npad, mode='constant', constant_values=0))
     return uniform_matrices
+
+def create_identity_map(dim:int, representation:str='superop')->np.ndarray:
+    # TODO: finish this function
+    pass
+
+def is_identity_map(map:np.ndarray, representation:str='superop')->bool:
+    # TODO: finish this function
+    if representation == 'superop':
+        pass
+    elif representation == 'choi':
+        pass
+    pass
