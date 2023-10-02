@@ -18,10 +18,10 @@ def small2zero(op:np.array, tol:float=1e-8):
     "erase the elements in op smaller (abs) than tol. Does NOT change in place"
     return np.where(abs(op)>=tol, op, 0)
 
-def calculate_norms(Os):
-    "calculates the norm of a list of operators O in Os"
-    for O in Os:
-        print(jnp.linalg.norm(O))
+def calculate_norms(ops):
+    "calculates the norm of a list of operators op in ops"
+    for op in ops:
+        print(jnp.linalg.norm(op))
 
 def update(old_params:list, grads:list, rate:float):
     assert len(old_params) == len(grads)
@@ -71,8 +71,6 @@ def model_Zs(Wi:np.ndarray, Xj:np.ndarray, Xk:np.ndarray, N:int, order:np.ndarra
     Yi_z = convert_supertensored2liouvillianfull(Yi_z)
     model = Xk @ Xj @ Yi_z
     ||O - model||F
-
-    pos: determines what is the Xi over which we are optimizing
     """
     Wi_super = create_supertensored_from_local(localop=Wi, N=N)
     d = int(Wi_super.shape[0]**(1/(2*N)))

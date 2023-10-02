@@ -342,8 +342,11 @@ def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=
 
 
 def create_supertensored_from_local(localop:np.ndarray, N:int):
-    "we asssume we have only one single operator tensored accross all sites to get the full superop"
-    # NOTE: we also assuming that localop is acting on two sites
+    """
+    We asssume we have only one single operator tensored accross all sites to get the full superop
+    
+    NOTE: we are also assuming that localop is acting on two sites
+    """
     superop = localop
     for _ in range(0, N//2-1):
         superop = jnp.kron(superop, superop)
