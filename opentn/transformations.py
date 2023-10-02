@@ -653,7 +653,7 @@ def split_matrix_svd(op:np.ndarray, chi_max:int=2, eps:float=1e-9):
     return u, s, v
 
 
-def factorize_psd_truncated(psd:np.ndarray, chi_max:int=2, eps:float=1e-9):
+def factorize_psd_truncated(psd:np.ndarray, chi_max:int=2, eps:float=1e-9)->np.ndarray:
     """
     Factorize psd matrix truncating the singular values based on tolerance parameters
     
@@ -663,6 +663,10 @@ def factorize_psd_truncated(psd:np.ndarray, chi_max:int=2, eps:float=1e-9):
     """
     x, s, xdg = split_matrix_svd(psd, chi_max, eps)
     return (x@np.diag(np.sqrt(s))).astype(np.float64)
+
+def unfactorize_psd(x:np.ndarray)->np.ndarray:
+    "inverse function of `factorize_psd_truncated` "
+    return x@x.conj().T
 
 def vec2list(vector:np.ndarray, sizes:list[int])->list:
     "split a vector into smaller vectors based on sizes in `sizes` list"
@@ -684,6 +688,8 @@ def all2samesize(matrices:list[np.ndarray], dim:int=1, size:int=None):
         npad =  tuple((0,size-init_sizes[i]) if j==dim else (0,0) for j in range(2)) # ((top, bottom), (left, right))
         uniform_matrices.append(np.pad(matrix, pad_width=npad, mode='constant', constant_values=0))
     return uniform_matrices
+
+
 
 def create_identity_map(dim:int, representation:str='superop')->np.ndarray:
     # TODO: finish this function
