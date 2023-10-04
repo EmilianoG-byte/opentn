@@ -210,8 +210,10 @@ def unvectorize(vector:np.ndarray, d0=None, d1=None)->np.ndarray:
         d1 = int(vector.size/d0)
     return vector.reshape((d0,d1))
 
-def vectorize_hamiltonian(H:np.ndarray, dim:int=2)->np.ndarray:
+def vectorize_hamiltonian(H:np.ndarray, dim:int=None)->np.ndarray:
     "Vectorize Hamiltonian.  Here we assume the i is included in the hamiltonian"
+    if not dim:
+        dim = H.shape[0]
     I = np.eye(dim, dtype=complex)
     return np.kron(H, I) - np.kron(I, H.T)
 
@@ -341,15 +343,23 @@ def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=
     return exp_superop
 
 
-def create_supertensored_from_local(localop:np.ndarray, N:int):
+def create_supertensored_from_local(localop:np.ndarray, N:int, parity="odd"):
     """
     We asssume we have only one single operator tensored accross all sites to get the full superop
     
     NOTE: we are also assuming that localop is acting on two sites
+    NOTE 2: we are also assuming that the partiy odd corresponds to starting from 0 and even starting from 1.
     """
-    superop = localop
-    for _ in range(0, N//2-1):
-        superop = jnp.kron(superop, superop)
+    if parity == 'odd':
+        superop = localop
+        for _ in range(0, N//2-1):
+            superop = jnp.kron(superop, superop)
+    elif parity == 'even':
+        # TODO
+        pass
+        # superop = jnp.eye()
+    else:
+        raise  ValueError(f'parity: {parity} is not a valid value. Choose betweeen even and odd')
     return superop
 
 def get_indices_supertensored2liouvillianfull(N:int):
