@@ -377,9 +377,15 @@ def get_indices_supertensored2liouvillianfull(N:int):
     destination_full = destination_one_side + list(np.array(destination_one_side) + 2*N)
     return source_full, destination_full
 
+def permute_cyclic(a:np.ndarray, n:int=1)->np.ndarray:
+    """
+    Permute cyclicly array ``a`` to the LEFT n places
+    """
+    return a[n:] + a[:n]
+
 def swap_superop_indices(suoperop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int):
     "swap the indices of the superoperator"
-    swaped_superop = jnp.reshape(suoperop, newshape=[d]*4*N)
+    swaped_superop = jnp.reshape(suoperop, newshape=[d]*4*N) # 2 for each side (normal and conjugate -> from vectorization)
     swaped_superop = jnp.moveaxis(swaped_superop, source=source_indices, destination=destination_indices)
     swaped_superop = jnp.reshape(swaped_superop, newshape=suoperop.shape)
     return swaped_superop
