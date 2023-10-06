@@ -79,6 +79,29 @@ def model_Zs(Wi:np.ndarray, Xj:np.ndarray, Xk:np.ndarray, N:int, order:np.ndarra
     Xs = jnp.array([Xi, Xj, Xk])
     return model_Ys(Xs[order])
 
+def model_Zs_odd(Wi:np.ndarray, N:int):
+    """
+    Zi = Wi @ Wi.conj().T
+    Yi_z = Zi (x) Zi (x) Zi (create_supertensored_from_local)
+    Yi_z = convert_supertensored2liouvillianfull(Yi_z)
+    model = Xk @ Xj @ Yi_z
+    ||O - model||F
+    """
+    Wi_super = create_supertensored_from_local(localop=Wi, N=N)
+    d = int(Wi_super.shape[0]**(1/(2*N)))
+    assert Wi_super.shape[0] == d**(2*N), f"{Wi_super.shape[0]} != {d**(2*N)}"
+    Xi = convert_supertensored2liouvillianfull(Wi_super, N=N, d=d)
+
+def model_Zs_even(Wi:np.ndarray, N:int):
+    """
+    TODO: this function
+    """
+    Wi_super = create_supertensored_from_local(localop=Wi, N=N)
+    d = int(Wi_super.shape[0]**(1/(2*N)))
+    assert Wi_super.shape[0] == d**(2*N), f"{Wi_super.shape[0]} != {d**(2*N)}"
+    Xi = convert_supertensored2liouvillianfull(Wi_super, N=N, d=d)
+
+
 @jit
 def model_Ys(Xs:np.ndarray):
     "Xs are assumed to be the square roots of the PSD matrices (Choi). We convert them here to superoperators"

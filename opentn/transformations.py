@@ -379,14 +379,17 @@ def get_indices_supertensored2liouvillianfull(N:int):
 
 def permute_cyclic(a:np.ndarray, n:int=1)->np.ndarray:
     """
-    Permute cyclicly array ``a`` to the LEFT n places
+    Permute cyclicly array ``a`` to the LEFT ``n`` places.
     """
     return a[n:] + a[:n]
 
-def swap_superop_indices(suoperop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int):
+def swap_superop_indices(suoperop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int, pbc:bool=False):
     "swap the indices of the superoperator"
     swaped_superop = jnp.reshape(suoperop, newshape=[d]*4*N) # 2 for each side (normal and conjugate -> from vectorization)
     swaped_superop = jnp.moveaxis(swaped_superop, source=source_indices, destination=destination_indices)
+    if pbc:
+        idx_permuted = permute_cyclic(list(range(N)), 1) + permute_cyclic(list(range(N,2*N)), 1)
+        swaped_superop = jnp.transpose(swaped_superop, idx_permuted + list(np.array(idx_permuted) + 2*N))
     swaped_superop = jnp.reshape(swaped_superop, newshape=suoperop.shape)
     return swaped_superop
 
@@ -681,7 +684,7 @@ def factorize_psd_truncated(psd:np.ndarray, chi_max:int=2, eps:float=1e-9)->np.n
     Returns x' such that psd ≈ x' @ x'.conj().T
     """
     x, s, xdg = split_matrix_svd(psd, chi_max, eps)
-    return (x@np.diag(np.sqrt(s))).astype(np.float64)
+    return x@np.diag(np.sqrt(s))
 
 def unfactorize_psd(x:np.ndarray)->np.ndarray:
     "inverse function of `factorize_psd_truncated` "
@@ -707,8 +710,6 @@ def all2samesize(matrices:list[np.ndarray], dim:int=1, size:int=None):
         npad =  tuple((0,size-init_sizes[i]) if j==dim else (0,0) for j in range(2)) # ((top, bottom), (left, right))
         uniform_matrices.append(np.pad(matrix, pad_width=npad, mode='constant', constant_values=0))
     return uniform_matrices
-
-
 
 def create_identity_map(dim:int, representation:str='superop')->np.ndarray:
     # TODO: finish this function

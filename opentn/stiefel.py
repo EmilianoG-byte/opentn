@@ -170,20 +170,24 @@ def retract_stiefel(x_list:list[np.ndarray], eta:np.ndarray):
     dxlist = [tangent_from_parametrization(x, *params) for x,params in zip(x_list, params_list)]
     return [polar_decomposition_rectangular(x, z) for x,z in zip(x_list, dxlist)] # stack gives problem with tree strcuture of jax
 
-def is_isometry(x_list:list[np.ndarray], show_idx:bool=False):
+def is_isometry_2(x:np.ndarray)->bool:
+    "check if ``x`` belongs to the stiefel manifold"
+    return np.allclose(x.conj().T@x, np.eye(x.shape[1]))
+
+def check_isometries(x_list:list[np.ndarray], show_idx:bool=False):
     "checks if the list of operators belong to the Stiefel manifold, i.e. are isometries"
-    # we assume that all operators are of the same dimensions
-    dim = x_list[0].shape[1]
-    are_isometry = [np.allclose(op.conj().T@op, np.eye(dim)) for op in x_list]
+    are_isometry = [is_isometry_2(op) for op in x_list]
     if show_idx:
-        are_false = [idx for idx, value in enumerate(are_isometry) if value==False]
-        if not are_false:
+        false_idx = [idx for idx, value in enumerate(are_isometry) if value==False]
+        if not false_idx:
             print('all elements are isometries')
         else:
             print('indices which are not isometries')
-            return are_false
+            return false_idx
     else:
         return are_isometry
+    
+is_isometry = check_isometries # for compatibility with "trust_region.ipynb"
     
 def is_hermitian(H:np.ndarray):
     "checks if a matrix is hermitian or not. If not, return norm between H and H+"
