@@ -34,18 +34,18 @@ class TestModels:
 class TestCVXPY:
     "class to test functions involving cvxpy atomic primitives"
     test_data_params = [
-        (2, 2, True),
-        (2, 3, False),
+        (2, 2),
+        (2, 3),
     ]
     # link_product is way slower than choi_composition due to @
-    @pytest.mark.parametrize("d, N, simplify", test_data_params)
-    def test_choi_composition(self, d, N, simplify):
+    @pytest.mark.parametrize("d, N", test_data_params)
+    def test_choi_composition(self, d, N):
         dim = d**N
         size = dim**2
         C1 = np.random.normal(size=(size,size))
         C2 = np.random.normal(size=(size,size))
 
-        C_t0 = link_product_cvxpy(C1=C1, C2=C2, dim=dim, transpose=0, simplify=simplify, optimization=False)
-        C_t1 = link_product_cvxpy(C1=C1, C2=C2, dim=dim, transpose=1, simplify=simplify, optimization=False)
+        C_t0 = link_product_cvxpy(C1=C1, C2=C2, dim=dim, transpose=0, optimization=False)
+        C_t1 = link_product_cvxpy(C1=C1, C2=C2, dim=dim, transpose=1, optimization=False)
 
         assert np.allclose(C_t0.value, C_t1.value)
