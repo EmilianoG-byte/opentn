@@ -171,7 +171,7 @@ def retract_stiefel(x_list:list[np.ndarray], eta:np.ndarray):
     return [polar_decomposition_rectangular(x, z) for x,z in zip(x_list, dxlist)] # stack gives problem with tree strcuture of jax
 
 def is_isometry_2(x:np.ndarray)->bool:
-    "check if ``x`` belongs to the stiefel manifold"
+    "check if `x` belongs to the stiefel manifold"
     return np.allclose(x.conj().T@x, np.eye(x.shape[1]))
 
 def check_isometries(x_list:list[np.ndarray], show_idx:bool=False):
@@ -252,9 +252,10 @@ def gradient_stiefel_vec(xi, func, metric='euclidean'):
         parametrization_from_tangent(X=x, Z=grad, stack=True) 
     for x, grad in zip(xi, zi)]).reshape(-1)
 
+def riemannian_canonical(x, func, vector=False):
+    "TODO: finish this function with the equations I have for canonical metric"
 
-
-def riemannian_hessian(func, x, vector=False):
+def riemannian_hessian(x, func, vector=False):
     "get riemannian hessian of func (needs to be the gradient of the actual function) evaluated at x"
     grad_func = lambda xi: gradient_stiefel(xi, func)
     n = len(x)
@@ -280,7 +281,7 @@ def riemannian_hessian(func, x, vector=False):
             # printing every 100 steps to see progress
             # if k%100 == 0:
                 # print('element: ', k)
-            _, jvp_eval = jax.jvp(grad_func, (x,), ([jnp.zeros_like(op, dtype=np.float64) if l!=i else project(X=op,Z=jnp.roll(unit_matrices[l],k)) for l,op in enumerate(x)],))
+            _, jvp_eval = jax.jvp(grad_func, (x,), ([jnp.zeros_like(op, dtype=np.float64) if l!=i else project(X=op, Z=jnp.roll(unit_matrices[l],k)) for l,op in enumerate(x)],))
 
             for j, element in enumerate(jvp_eval):
                 # we need to project each of them and store in an array that has information about the index k
@@ -293,15 +294,14 @@ def riemannian_hessian(func, x, vector=False):
     return hessian_columns
 
 
-def riemannian_hessian_vec(func, x, transpose:bool=False):
+def riemannian_hessian_vec(x, func, transpose:bool=False):
     "riemannian hessian matrix of func evaluated at list of Stiefel matrices x"
-    hessian_columns = riemannian_hessian(func, x, vector=True) 
+    hessian_columns = riemannian_hessian(x, func, vector=True) 
     n = len(x)
     size_vec = hessian_columns[0][0].shape[0]
     # NOTE on shape: 0th: column, 1st: row, 2,3: from (size, size) from jvp of grad_func
     hessian_full = np.stack(hessian_columns, axis=1) # n, n, size_vec, size_vec
     hessian_full = hessian_full.swapaxes(1,2).reshape(n*size_vec, n*size_vec)
     if transpose:
-        print('Transposing')
         hessian_full = hessian_full.T
     return hessian_full

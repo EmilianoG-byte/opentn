@@ -16,14 +16,14 @@ from itertools import chain
 from jax import config
 config.update("jax_enable_x64", True)
 
-def exp_operator_dt(op:np.ndarray, tau:float=1, library='jax')->np.ndarray:
+def exp_operator_dt(op:np.ndarray, tau:float=1, backend='jax')->np.ndarray:
     "exponentiate operator with a certain time step size tau"
-    if library == 'scipy':
+    if backend == 'scipy':
         exp_op = scipy.linalg.expm(op*tau)
-    elif library == 'jax':
+    elif backend == 'jax':
         exp_op = jscipy.linalg.expm(op*tau)
     else:
-        raise ValueError(f'{library} is not a valid library string')
+        raise ValueError(f'{backend} is not a valid backend string')
     return exp_op
 
 def lindbladian2super(H:np.ndarray = None, Li:list[np.ndarray] = [], dim:int=None)->np.ndarray:
@@ -312,7 +312,8 @@ def create_2local_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:bool=False):
         Lvec_pbc = create_pbc_liouvillian(Lnn=Lnn, N=N, d=d)
         Lvec_even += Lvec_pbc
         Lvec += Lvec_pbc
-
+        
+    assert jnp.allclose(Lvec, Lvec_even + Lvec_odd)
     return Lvec, Lvec_odd, Lvec_even, Lnn
 
 def create_pbc_liouvillian(Lnn:np.ndarray, N:int, d:int):
@@ -336,16 +337,16 @@ def create_kitaev_liouvillians(N:int, d:int, gamma:float, pbc:bool=False):
     return Lvec, Lvec_odd, Lvec_even, Lnn
 
 
-def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=2, backend='jax'):
+def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=2, half_idx:str=1,backend:str='jax'):
     """
-    Create troter layers of (order)th-order by exponentiating the liouvillians.
+    Create troter layers of `order`th-order by exponentiating the `liouvillians`.
 
-    NOTE: We assume liouvillians = [ Lvec, Lvec_odd, Levec_even ]
+    We assume `liouvillians = [ Lvec, Lvec_odd, Lvec_even ]`. Otherwise change the `half_idx` parameter
     """
     exp_superop = []
     if order==2:
         for i, op in enumerate(liouvillians):
-            if i == 1:
+            if i == half_idx:
                 exp_superop.append(exp_operator_dt(op, tau/2, backend))
             else:
                 exp_superop.append(exp_operator_dt(op, tau, backend))
@@ -409,24 +410,24 @@ def permute_operator_pbc(op:np.ndarray, N:int, d:int):
     permutation = permute_cyclic(list(range(N)), direction='right')
     return permute_operator(op=op, permutation=permutation, d=d)
 
-def swap_superop_indices(superop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int, pbc:bool=False):
+def swap_superop_indices(superop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int, shift_pbc:bool=False):
     "Swap the indices of the superoperator. Both the 'normal' and the 'conjugated' indices "
     swaped_superop = jnp.reshape(superop, newshape=[d]*4*N) # 2 for each side (normal and conjugate -> from vectorization)
     swaped_superop = jnp.moveaxis(swaped_superop, source=source_indices, destination=destination_indices)
-    if pbc:
+    if shift_pbc:
         # NOTE: here we assumed permutation to the left. I all operators are the same on all sites this should not change anything.
         idx_permuted = permute_cyclic(list(range(N)), 1) + permute_cyclic(list(range(N,2*N)), 1)
         swaped_superop = jnp.transpose(swaped_superop, idx_permuted + list(np.array(idx_permuted) + 2*N))
     swaped_superop = jnp.reshape(swaped_superop, newshape=superop.shape)
     return swaped_superop
 
-def convert_supertensored2liouvillianfull(local_tensored:np.ndarray, N:int, d:int, pbc:bool=False):
+def convert_supertensored2liouvillianfull(local_tensored:np.ndarray, N:int, d:int, shift_pbc:bool=False):
     """
     convert full superoperator created from local superoperators tensored to the full
     superoperator created from exponentiating the full vectorized lindbladians
     """
     source_indices, destination_indices = get_indices_supertensored2liouvillianfull(N)
-    return swap_superop_indices(local_tensored, source_indices, destination_indices, N, d, pbc)
+    return swap_superop_indices(local_tensored, source_indices, destination_indices, N, d, shift_pbc)
 
 
 def convert_liouvillianfull2supertensored(full_liouvillian:np.ndarray, N:int, d:int,):
@@ -637,9 +638,9 @@ def choi_composition_3Y_cvxpy(C1, C2, C3, dim:int):
     C_123 = cp.partial_trace(cp.partial_trace(cp.kron(cp.kron(I, C2),I) @ C_13_tbtc, dims=[dim]*4, axis=1), dims=[dim]*3, axis=1)
     return C_123
 
-def choi2ortho(x:np.ndarray, dim:int=None):
+def choi2ortho(x:np.ndarray, dim:int=None)->np.ndarray:
     """
-    transform the x matrix that factorize a choi matrix into its isometric form (Stiefel manifold)
+    Transform the x matrix that factorize a choi matrix into its isometric form (Stiefel manifold)
     """
     assert x.ndim == 2, "x should be a matrix"
     # local dimension (first dimension of x should be dim^2)
@@ -652,9 +653,9 @@ def choi2ortho(x:np.ndarray, dim:int=None):
     x = x.swapaxes(1,2).reshape([dim*k, dim])
     return x
 
-def ortho2choi(x:np.ndarray, dim:int=None):
+def ortho2choi(x:np.ndarray, dim:int=None)->np.ndarray:
     """
-    transform the x matrix belonging to the Stiefel Manifold (isometric) into its choi form
+    Transform the x matrix belonging to the Stiefel Manifold (isometric) into its choi form
     """
     if not dim:
         dim = x.shape[1]
@@ -663,6 +664,27 @@ def ortho2choi(x:np.ndarray, dim:int=None):
     x = np.reshape(x, [dim, k, dim])
     x = x.swapaxes(1,2).reshape([dim**2, k])
     return x
+
+def super2ortho(x:np.ndarray, rank:int=None)->np.ndarray:
+    """
+    Transform the superoperator x into its isometric form (Sitefel Manifold)
+
+    This looks like: superop -> choi -> choi_factor -> stiefel
+    """
+    # convert to choi first to calculate the correct rank
+    x = super2choi(x)
+    if not rank:
+        rank = np.linalg.matrix_rank(x)
+    return choi2ortho(factorize_psd_truncated(x, chi_max=rank))
+
+def ortho2super(x:np.ndarray)->np.ndarray:
+    """
+    Transform the x matrix belonging to the Stiefel Manifold (isometric) to the correspondent superoperator
+
+    This looks like: stiefel ->  choi_factor ->  choi -> superop 
+    """
+    return choi2super(unfactorize_psd(ortho2choi(x)))
+
 
 def split_matrix_svd(op:np.ndarray, chi_max:int=2, eps:float=1e-9):
     """
@@ -763,5 +785,5 @@ def compose_superops_list(superops:list[np.ndarray])->np.ndarray:
     return composition
 
 def tensor_to_matrix(tensor:np.ndarray)->np.ndarray:
-    "convert a ndim tensor (n>2) onto a matrix"
+    "convert a ndim tensor (ndim>2) into a matrix"
     return jnp.reshape(a=tensor, newshape=[int(np.sqrt(tensor.size))]*2)

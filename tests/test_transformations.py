@@ -116,20 +116,33 @@ class TestLvec:
         # current one does not seem to apply
         # assert np.linalg.matrix_rank(super2choi(exp_Lvec), tol=1e-10) == 4*rank_nn**3
 
-    @pytest.mark.parametrize("N, d, gamma, tau", test_data_params)
-    def test_supertensored_from_local(self, N, d, gamma, tau):
+
+    test_data_params = [
+        (4, 2, 1e-2, 2, False),
+        (4, 2, 1e-2, 1, True),
+    ]
+    @pytest.mark.parametrize("N, d, gamma, tau, pbc", test_data_params)
+    def test_supertensored_from_local(self, N, d, gamma, tau, pbc):
         """
         Test lindbladian and liouvillian operators generated for the kitaev 2-site channel
         """
-        Lvec, Lvec_odd, Lvec_even, Lnn = create_kitaev_liouvillians(N, d, gamma)
+        Lvec, Lvec_odd, Lvec_even, Lnn = create_kitaev_liouvillians(N, d, gamma, pbc)
         # now check the liouvillians exp are created properly
-        exp_Lvec_odd = exp_operator_dt(Lvec_odd, tau, 'jax')
+        exp_Lvec_odd = exp_operator_dt(Lvec_odd, tau/2, 'jax')
+        exp_Lvec_even = exp_operator_dt(Lvec_even, tau, 'jax')
 
         superop = lindbladian2super(Li=[Lnn])
-        superop = exp_operator_dt(superop, tau, 'jax')
-        super_exp_full = create_supertensored_from_local(superop, N)
-        super_exp_full = convert_supertensored2liouvillianfull(super_exp_full, N, d)
 
-        assert super_exp_full.shape == exp_Lvec_odd.shape
-        assert np.allclose(super_exp_full, exp_Lvec_odd)
+        superop_odd = exp_operator_dt(superop, tau/2, 'jax')
+        super_exp_full_odd = create_supertensored_from_local(superop_odd, N)
+        super_exp_full_odd = convert_supertensored2liouvillianfull(super_exp_full_odd, N, d)
+
+        superop_even = exp_operator_dt(superop, tau, 'jax')
+        if pbc:
+            super_exp_full_even = create_supertensored_from_local(superop_even, N)
+        else:
+            super_exp_full_even = jnp.kron(np.eye(d**4,d**4), superop_even) 
+        super_exp_full_even = convert_supertensored2liouvillianfull(super_exp_full_even, N, d, shift_pbc=True) # True reagardless of pbc because this would create the identity x superop when pbc = False
+        assert np.allclose(super_exp_full_odd, exp_Lvec_odd)
+        assert np.allclose(super_exp_full_even, exp_Lvec_even)
 

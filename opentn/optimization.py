@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from typing import Callable
 from jax import jit
-from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition, ortho2choi, compose_superops_list, unfactorize_psd, tensor_to_matrix
+from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition, ortho2choi, compose_superops_list, unfactorize_psd, tensor_to_matrix, ortho2super
 import cvxpy as cvx
 
 from jax import config
@@ -82,12 +82,15 @@ def model_Zs(Wi:np.ndarray, Xj:np.ndarray, Xk:np.ndarray, N:int, order:np.ndarra
 def model_stiefel_local(xs:np.ndarray, N:int, d:int):
     """
     Optimization model for stiefel local operators
-    
+
     Pipeline is:
-    stiefel -> choi_sqrt -> choi -> superop_local ->superop_full_split -> superop_full -> compose them
+    stiefel -> choi_sqrt -> choi -> superop_local -> superop_full_split -> superop_full -> compose them
+
+    Where superop_full_split is a superoperator with the pattern (i, i+1, i*, i+1*) for i in [0,N-1]
+    And superop_full has the pattern (0,....,N-1, 0*, ..., N-1*)
     """
     assert len(xs)==3, 'only odd-even-odd structure allowed'
-    superops_local = [choi2super(unfactorize_psd(ortho2choi(x))) for x in xs]
+    superops_local = [ortho2super(x) for x in xs]
     # we assume the same operator acts on all sites (unlike before for even layer)
     superops_full_split = [create_supertensored_from_local(localop=op, N=N) for op in superops_local]
     # here the conversion changes for odd and even layer
@@ -95,6 +98,8 @@ def model_stiefel_local(xs:np.ndarray, N:int, d:int):
     for i, op in enumerate(superops_full_split):
         if i%2 == 1:
             pbc = True
+        else:
+            pbc = False
         superops_full.append(convert_supertensored2liouvillianfull(op, N=N, d=d, pbc=pbc))
     return compose_superops_list(superops_full)
 
