@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from typing import Callable
 from jax import jit
-from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition, ortho2choi
+from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition, ortho2choi, compose_superops_list, unfactorize_psd, tensor_to_matrix
 import cvxpy as cvx
 
 from jax import config
@@ -44,26 +44,26 @@ def cosine_similarity(A:np.ndarray,B:np.ndarray):
     # taking the real part as otherwise the grad calculation should guarantee cost_fn to be holomorphic
     return -(a@b.T.conj() / (jnp.linalg.norm(a)*jnp.linalg.norm(b))).real
 
-def X2C(Xs):
-    "transform a list of Xs onto a list of Cs"
+def unfactorize_list(xs):
+    "transform a list of xs onto a list of Cs"
     Cs = []
-    for X in Xs:
+    for x in xs:
         # convert each of the X into a matrix
-        if X.ndim > 2:
-            X = jnp.reshape(a=X, newshape=[int(np.sqrt(X.size))]*2)
-        Cs.append(jnp.dot(X, X.T.conj()))
+        if x.ndim > 2:
+            x = tensor_to_matrix(x)
+        Cs.append(unfactorize_psd(x))
     return Cs
 
 @jit
-def model_Cs(Xs:np.ndarray):
+def model_Cs(xs:np.ndarray):
     "Composition of choi matrices. Cs are assumed to be PSD. Will return a Choi as well"
-    Cs = X2C(Xs)
+    Cs = unfactorize_list(xs)
     C_total  = Cs[0]
     for C in Cs[1:]:
         C_total = choi_composition(C_total, C)
     return C_total
 
-# TODO: cannnot JIT this function due to create_supertensored_from_local
+# NOTE: cannnot JIT this function due to create_supertensored_from_local
 def model_Zs(Wi:np.ndarray, Xj:np.ndarray, Xk:np.ndarray, N:int, order:np.ndarray=np.array([0,1,2])):
     """
     Zi = Wi @ Wi.conj().T
@@ -76,48 +76,38 @@ def model_Zs(Wi:np.ndarray, Xj:np.ndarray, Xk:np.ndarray, N:int, order:np.ndarra
     d = int(Wi_super.shape[0]**(1/(2*N)))
     assert Wi_super.shape[0] == d**(2*N), f"{Wi_super.shape[0]} != {d**(2*N)}"
     Xi = convert_supertensored2liouvillianfull(Wi_super, N=N, d=d)
-    Xs = jnp.array([Xi, Xj, Xk])
-    return model_Ys(Xs[order])
+    xs = jnp.array([Xi, Xj, Xk])
+    return model_Ys(xs[order])
 
-def model_Zs_odd(Wi:np.ndarray, N:int):
+def model_stiefel_local(xs:np.ndarray, N:int, d:int):
     """
-    Zi = Wi @ Wi.conj().T
-    Yi_z = Zi (x) Zi (x) Zi (create_supertensored_from_local)
-    Yi_z = convert_supertensored2liouvillianfull(Yi_z)
-    model = Xk @ Xj @ Yi_z
-    ||O - model||F
+    Pipeline is:
+    stiefel -> choi_sqrt -> choi -> superop_local ->superop_full_split -> superop_full -> compose them
     """
-    Wi_super = create_supertensored_from_local(localop=Wi, N=N)
-    d = int(Wi_super.shape[0]**(1/(2*N)))
-    assert Wi_super.shape[0] == d**(2*N), f"{Wi_super.shape[0]} != {d**(2*N)}"
-    Xi = convert_supertensored2liouvillianfull(Wi_super, N=N, d=d)
-
-def model_Zs_even(Wi:np.ndarray, N:int):
-    """
-    TODO: this function
-    """
-    Wi_super = create_supertensored_from_local(localop=Wi, N=N)
-    d = int(Wi_super.shape[0]**(1/(2*N)))
-    assert Wi_super.shape[0] == d**(2*N), f"{Wi_super.shape[0]} != {d**(2*N)}"
-    Xi = convert_supertensored2liouvillianfull(Wi_super, N=N, d=d)
-
-
+    assert len(xs)==3, 'only odd-even-odd structure allowed'
+    superops_local = [choi2super(unfactorize_psd(ortho2choi(x))) for x in xs]
+    # we assume the same operator acts on all sites (unlike before for even layer)
+    superops_full_split = [create_supertensored_from_local(localop=op, N=N) for op in superops_local]
+    # here the conversion changes for odd and even layer
+    superops_full = []
+    for i, op in enumerate(superops_full_split):
+        if i%2 == 1:
+            pbc = True
+        superops_full.append(convert_supertensored2liouvillianfull(op, N=N, d=d, pbc=pbc))
+    return compose_superops_list(superops_full)
 @jit
-def model_Ys(Xs:np.ndarray):
-    "Xs are assumed to be the square roots of the PSD matrices (Choi). We convert them here to superoperators"
-    Cs = X2C(Xs)
+def model_Ys(xs:np.ndarray):
+    "xs are assumed to be the square roots of the PSD matrices (Choi). We convert them here to superoperators"
+    Cs = unfactorize_list(xs)
     # convert to superoperators
     Ys = [choi2super(choi=C) for C in Cs]
-    Y_total = Ys[0]
-    for Y in Ys[1:]:
-        Y_total = jnp.dot(Y, Y_total)
-    return Y_total
+    return compose_superops_list(Ys)
 
 @jit
-def model_Ys_stiefel(Xs:np.ndarray):
-    "Xs are assume to be the squared roots of the PSD matrices with axis 1,2 swaped to make them orthonormal"
-    Xs_choi = [ortho2choi(x) for x in Xs]
-    return model_Ys(Xs_choi)
+def model_Ys_stiefel(xs:list[np.ndarray]):
+    "xs are assume to be the squared roots of the PSD matrices with axis 1,2 swaped to make them orthonormal"
+    xs_choi = [ortho2choi(x) for x in xs]
+    return model_Ys(xs_choi)
 
 def compute_loss(xi:np.ndarray, loss_fn, model, exact:np.ndarray, **kwargs):
     """

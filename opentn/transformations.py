@@ -343,23 +343,17 @@ def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=
     return exp_superop
 
 
-def create_supertensored_from_local(localop:np.ndarray, N:int, parity="odd"):
+def create_supertensored_from_local(localop:np.ndarray, N:int):
     """
     We asssume we have only one single operator tensored accross all sites to get the full superop
     
-    NOTE: we are also assuming that localop is acting on two sites
-    NOTE 2: we are also assuming that the partiy odd corresponds to starting from 0 and even starting from 1.
+    NOTE: we are assuming localop is acting on two sites
+    NOTE: convention: odd layer = 0,2, even layer = 1
     """
-    if parity == 'odd':
-        superop = localop
-        for _ in range(0, N//2-1):
-            superop = jnp.kron(superop, superop)
-    elif parity == 'even':
-        # TODO
-        pass
-        # superop = jnp.eye()
-    else:
-        raise  ValueError(f'parity: {parity} is not a valid value. Choose betweeen even and odd')
+    assert N%2 == 0, 'Only even number of sites allowed'
+    superop = localop
+    for _ in range(0, N//2-1):
+        superop = jnp.kron(superop, superop)
     return superop
 
 def get_indices_supertensored2liouvillianfull(N:int):
@@ -383,26 +377,26 @@ def permute_cyclic(a:np.ndarray, n:int=1)->np.ndarray:
     """
     return a[n:] + a[:n]
 
-def swap_superop_indices(suoperop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int, pbc:bool=False):
+def swap_superop_indices(superop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int, pbc:bool=False):
     "swap the indices of the superoperator"
-    swaped_superop = jnp.reshape(suoperop, newshape=[d]*4*N) # 2 for each side (normal and conjugate -> from vectorization)
+    swaped_superop = jnp.reshape(superop, newshape=[d]*4*N) # 2 for each side (normal and conjugate -> from vectorization)
     swaped_superop = jnp.moveaxis(swaped_superop, source=source_indices, destination=destination_indices)
     if pbc:
         idx_permuted = permute_cyclic(list(range(N)), 1) + permute_cyclic(list(range(N,2*N)), 1)
         swaped_superop = jnp.transpose(swaped_superop, idx_permuted + list(np.array(idx_permuted) + 2*N))
-    swaped_superop = jnp.reshape(swaped_superop, newshape=suoperop.shape)
+    swaped_superop = jnp.reshape(swaped_superop, newshape=superop.shape)
     return swaped_superop
 
-def convert_supertensored2liouvillianfull(local_tensored:np.ndarray, N:int, d:int):
+def convert_supertensored2liouvillianfull(local_tensored:np.ndarray, N:int, d:int, pbc:bool=False):
     """
     convert full superoperator created from local superoperators tensored to the full
     superoperator created from exponentiating the full vectorized lindbladians
     """
     source_indices, destination_indices = get_indices_supertensored2liouvillianfull(N)
-    return swap_superop_indices(local_tensored, source_indices, destination_indices, N, d)
+    return swap_superop_indices(local_tensored, source_indices, destination_indices, N, d, pbc)
 
 
-def convert_liouvillianfull2supertensored(full_liouvillian:np.ndarray, N:int, d:int):
+def convert_liouvillianfull2supertensored(full_liouvillian:np.ndarray, N:int, d:int,):
     """
     convert the full superoperator created from exponentiating the full vectorized lindbladians to the full superoperator created from local superoperators tensored
     """
@@ -722,3 +716,19 @@ def is_identity_map(map:np.ndarray, representation:str='superop')->bool:
     elif representation == 'choi':
         pass
     pass
+
+def compose_superops_list(superops:list[np.ndarray])->np.ndarray:
+    """
+    Compose (matrix multiply) a list of superoperators.
+    
+    We assume that the list order follows the application of the channel.
+    i.e. superops[0] is applied first to the vectorized density matrix
+    """
+    composition = superops[0]
+    for op in superops[1:]:
+        composition = jnp.dot(op, composition)
+    return composition
+
+def tensor_to_matrix(tensor:np.ndarray)->np.ndarray:
+    "convert a ndim tensor (n>2) onto a matrix"
+    return jnp.reshape(a=tensor, newshape=[int(np.sqrt(tensor.size))]*2)
