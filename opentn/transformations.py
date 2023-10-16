@@ -292,10 +292,10 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
             # see: https://stackoverflow.com/questions/15933741/how-do-i-catch-a-numpy-warning-like-its-an-exception-not-just-for-testing
     return X
 
-
-def create_2local_liouvillians(Lnn:np.ndarray, N:int, d:int):
+def create_2local_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:bool=False):
     "create the liouvillians from a local two-sites lindbladian operator"
 
+    # TODO: once I check this works correctly, Lvec should be created as the sum of Lodd and Leven.
     Lvec = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
     for i in range(0, N-1):
         Lvec += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
@@ -308,7 +308,18 @@ def create_2local_liouvillians(Lnn:np.ndarray, N:int, d:int):
     for i in range(1, N-1, 2):
         Lvec_even += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
 
+    if pbc:
+        Lvec_pbc = create_pbc_liouvillian(Lnn=Lnn, N=N, d=d)
+        Lvec_even += Lvec_pbc
+        Lvec += Lvec_pbc
+
     return Lvec, Lvec_odd, Lvec_even, Lnn
+
+def create_pbc_liouvillian(Lnn:np.ndarray, N:int, d:int):
+    "create 2local liouvillian "
+    Lnn_pbc = op2fullspace(op=Lnn, i=N-2, N=N, num_sites=2)
+    Lnn_pbc = permute_operator_pbc(Lnn_pbc, N=N, d=d)
+    return vectorize_dissipative(Lnn_pbc)
 
 def get_kitaev_nn_linbladian(gamma:float):
     "Two sites libladian operator from kitaev wire noise model"
@@ -318,14 +329,14 @@ def get_kitaev_nn_linbladian(gamma:float):
     Lnn = jnp.sqrt(gamma)*(op2fullspace(raising, i=0, N=NN) + op2fullspace(raising, i=1, N=NN))@(op2fullspace(lowering, i=0, N=NN) - op2fullspace(lowering, i=1, N=NN))/4
     return Lnn
 
-def create_kitaev_liouvillians(N:int, d:int, gamma:float):
+def create_kitaev_liouvillians(N:int, d:int, gamma:float, pbc:bool=False):
     "create the liouvillians corresponding to the kitaev wire noise model"
     Lnn = get_kitaev_nn_linbladian(gamma)
-    Lvec, Lvec_odd, Lvec_even, Lnn = create_2local_liouvillians(Lnn, N, d)
+    Lvec, Lvec_odd, Lvec_even, Lnn = create_2local_liouvillians(Lnn, N, d, pbc)
     return Lvec, Lvec_odd, Lvec_even, Lnn
 
 
-def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=2):
+def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=2, backend='jax'):
     """
     Create troter layers of (order)th-order by exponentiating the liouvillians.
 
@@ -335,9 +346,9 @@ def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=
     if order==2:
         for i, op in enumerate(liouvillians):
             if i == 1:
-                exp_superop.append(exp_operator_dt(op, tau/2, 'jax'))
+                exp_superop.append(exp_operator_dt(op, tau/2, backend))
             else:
-                exp_superop.append(exp_operator_dt(op, tau, 'jax'))
+                exp_superop.append(exp_operator_dt(op, tau, backend))
     else:
         raise ValueError('ATM only order 2 is implemented')
     return exp_superop
@@ -371,17 +382,39 @@ def get_indices_supertensored2liouvillianfull(N:int):
     destination_full = destination_one_side + list(np.array(destination_one_side) + 2*N)
     return source_full, destination_full
 
-def permute_cyclic(a:np.ndarray, n:int=1)->np.ndarray:
+def permute_cyclic(a:np.ndarray, n:int=1, direction='left')->np.ndarray:
     """
     Permute cyclicly array ``a`` to the LEFT ``n`` places.
     """
-    return a[n:] + a[:n]
+    if direction=='left':
+        return a[n:] + a[:n]
+    elif direction=='right':
+        return a[-n:] + a[:-n]
+
+def permute_operator(op: np.ndarray, permutation:list[int], d:int):
+    """
+    Find the representation of an operator after permuting lattice sites legs.
+    """
+    N = len(permutation)
+    assert op.shape == (d**N, d**N)
+    op = jnp.reshape(op, [d]*2*N)
+    op = jnp.transpose(op, permutation + [N + p for p in permutation])
+    op = jnp.reshape(op, (d**N, d**N))
+    return op
+
+def permute_operator_pbc(op:np.ndarray, N:int, d:int):
+    """
+    Permute operator assumed to be acting non-trivially on N-2 and N-1 to act on N-1 and 0
+    """
+    permutation = permute_cyclic(list(range(N)), direction='right')
+    return permute_operator(op=op, permutation=permutation, d=d)
 
 def swap_superop_indices(superop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int, pbc:bool=False):
-    "swap the indices of the superoperator"
+    "Swap the indices of the superoperator. Both the 'normal' and the 'conjugated' indices "
     swaped_superop = jnp.reshape(superop, newshape=[d]*4*N) # 2 for each side (normal and conjugate -> from vectorization)
     swaped_superop = jnp.moveaxis(swaped_superop, source=source_indices, destination=destination_indices)
     if pbc:
+        # NOTE: here we assumed permutation to the left. I all operators are the same on all sites this should not change anything.
         idx_permuted = permute_cyclic(list(range(N)), 1) + permute_cyclic(list(range(N,2*N)), 1)
         swaped_superop = jnp.transpose(swaped_superop, idx_permuted + list(np.array(idx_permuted) + 2*N))
     swaped_superop = jnp.reshape(swaped_superop, newshape=superop.shape)

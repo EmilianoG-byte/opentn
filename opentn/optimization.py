@@ -81,6 +81,8 @@ def model_Zs(Wi:np.ndarray, Xj:np.ndarray, Xk:np.ndarray, N:int, order:np.ndarra
 
 def model_stiefel_local(xs:np.ndarray, N:int, d:int):
     """
+    Optimization model for stiefel local operators
+    
     Pipeline is:
     stiefel -> choi_sqrt -> choi -> superop_local ->superop_full_split -> superop_full -> compose them
     """
@@ -95,6 +97,7 @@ def model_stiefel_local(xs:np.ndarray, N:int, d:int):
             pbc = True
         superops_full.append(convert_supertensored2liouvillianfull(op, N=N, d=d, pbc=pbc))
     return compose_superops_list(superops_full)
+
 @jit
 def model_Ys(xs:np.ndarray):
     "xs are assumed to be the square roots of the PSD matrices (Choi). We convert them here to superoperators"
