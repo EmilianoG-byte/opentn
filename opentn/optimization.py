@@ -92,7 +92,7 @@ def model_stiefel_local(xs:np.ndarray, N:int, d:int):
     assert len(xs)==3, 'only odd-even-odd structure allowed'
     superops_local = [ortho2super(x) for x in xs]
     # we assume the same operator acts on all sites (unlike before for even layer)
-    superops_full_split = [create_supertensored_from_local(localop=op, N=N) for op in superops_local]
+    superops_full_split = [create_supertensored_from_local(localop=op, N=N, pbc=True) for op in superops_local]
     # here the conversion changes for odd and even layer
     superops_full = []
     for i, op in enumerate(superops_full_split):
@@ -100,7 +100,7 @@ def model_stiefel_local(xs:np.ndarray, N:int, d:int):
             pbc = True
         else:
             pbc = False
-        superops_full.append(convert_supertensored2liouvillianfull(op, N=N, d=d, pbc=pbc))
+        superops_full.append(convert_supertensored2liouvillianfull(op, N=N, d=d, shift_pbc=pbc))
     return compose_superops_list(superops_full)
 
 @jit

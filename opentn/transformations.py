@@ -318,6 +318,7 @@ def create_2local_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:bool=False):
 
 def create_pbc_liouvillian(Lnn:np.ndarray, N:int, d:int):
     "create 2local liouvillian "
+    # i = N-2, so we shift to the right in permute_operator_pbc otherwise we would do i=0 and shift to the left.
     Lnn_pbc = op2fullspace(op=Lnn, i=N-2, N=N, num_sites=2)
     Lnn_pbc = permute_operator_pbc(Lnn_pbc, N=N, d=d)
     return vectorize_dissipative(Lnn_pbc)
@@ -355,17 +356,30 @@ def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=
     return exp_superop
 
 
-def create_supertensored_from_local(localop:np.ndarray, N:int):
+def create_supertensored_from_local(localop:np.ndarray, N:int, pbc:bool=False, layer:int=0):
     """
-    We asssume we have only one single operator tensored accross all sites to get the full superop
+    We asssume we have only one single operator tensored accross all sites to get the full superop (except N-1,0)
     
-    NOTE: we are assuming localop is acting on two sites
-    NOTE: convention: odd layer = 0,2, even layer = 1
+    We are assuming localop is acting on two sites
+    Convention: odd layer = 0,2, even layer = 1
+    pbc will determine if the operator acting on sites (N-1,0) is an identity (False) or localop (True)
+    layer determines which layer (even or odd) this would be acting on. 
     """
     assert N%2 == 0, 'Only even number of sites allowed'
-    superop = localop
+
+    if layer%2 == 0:
+        pbc = True
+    else:
+        # just to show explicitely that this is the desired behaviour
+        pass
+
+    if pbc:
+        superop = localop
+    else:
+        dim = localop.shape[0]
+        superop = np.eye(dim, dim)
     for _ in range(0, N//2-1):
-        superop = jnp.kron(superop, superop)
+        superop = jnp.kron(superop, localop)
     return superop
 
 def get_indices_supertensored2liouvillianfull(N:int):
@@ -383,7 +397,7 @@ def get_indices_supertensored2liouvillianfull(N:int):
     destination_full = destination_one_side + list(np.array(destination_one_side) + 2*N)
     return source_full, destination_full
 
-def permute_cyclic(a:np.ndarray, n:int=1, direction='left')->np.ndarray:
+def permute_cyclic(a:np.ndarray, n:int=1, direction:str='left')->np.ndarray:
     """
     Permute cyclicly array ``a`` to the LEFT ``n`` places.
     """
@@ -403,11 +417,11 @@ def permute_operator(op: np.ndarray, permutation:list[int], d:int):
     op = jnp.reshape(op, (d**N, d**N))
     return op
 
-def permute_operator_pbc(op:np.ndarray, N:int, d:int):
+def permute_operator_pbc(op:np.ndarray, N:int, d:int, direction:str='right'):
     """
     Permute operator assumed to be acting non-trivially on N-2 and N-1 to act on N-1 and 0
     """
-    permutation = permute_cyclic(list(range(N)), direction='right')
+    permutation = permute_cyclic(list(range(N)), direction=direction)
     return permute_operator(op=op, permutation=permutation, d=d)
 
 def swap_superop_indices(superop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int, shift_pbc:bool=False):
@@ -415,7 +429,7 @@ def swap_superop_indices(superop:np.ndarray, source_indices:list[int], destinati
     swaped_superop = jnp.reshape(superop, newshape=[d]*4*N) # 2 for each side (normal and conjugate -> from vectorization)
     swaped_superop = jnp.moveaxis(swaped_superop, source=source_indices, destination=destination_indices)
     if shift_pbc:
-        # NOTE: here we assumed permutation to the left. I all operators are the same on all sites this should not change anything.
+        # NOTE: here we assumed permutation to the left. If all operators are the same on all sites this should not change anything.
         idx_permuted = permute_cyclic(list(range(N)), 1) + permute_cyclic(list(range(N,2*N)), 1)
         swaped_superop = jnp.transpose(swaped_superop, idx_permuted + list(np.array(idx_permuted) + 2*N))
     swaped_superop = jnp.reshape(swaped_superop, newshape=superop.shape)
