@@ -252,10 +252,16 @@ def gradient_stiefel_vec(xi, func, metric='euclidean'):
         parametrization_from_tangent(X=x, Z=grad, stack=True) 
     for x, grad in zip(xi, zi)]).reshape(-1)
 
-def riemannian_canonical(x, func, vector=False):
-    "TODO: finish this function with the equations I have for canonical metric"
+def riemannian_connection(D_nu, nu, eta, x, alpha0:int=1, alpha1:int=1):
+    """
+    General parametrized riemannian connection of tangent spaces
+    
+    From equation 5.4 of https://arxiv.org/abs/2009.10159
+    """
+    In = np.eye(x.shape[0])
+    return D_nu + 0.5 * x @ (eta.T @ nu + nu.T @ eta) + ((alpha0-alpha1)/alpha0)*(In - x @ x.T) @ (eta @ nu.T + nu @ eta.T) @ x
 
-def riemannian_hessian(x, func, vector=False):
+def riemannian_hessian(x, func, vector=False, metric:str='euclidean'):
     "get riemannian hessian of func (needs to be the gradient of the actual function) evaluated at x"
     grad_func = lambda xi: gradient_stiefel(xi, func)
     n = len(x)
@@ -281,22 +287,36 @@ def riemannian_hessian(x, func, vector=False):
             # printing every 100 steps to see progress
             # if k%100 == 0:
                 # print('element: ', k)
-            _, jvp_eval = jax.jvp(grad_func, (x,), ([jnp.zeros_like(op, dtype=np.float64) if l!=i else project(X=op, Z=jnp.roll(unit_matrices[l],k)) for l,op in enumerate(x)],))
+            # TODO: not project the unit matrices ?
+            tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else project(X=op, Z=jnp.roll(unit_matrices[l],k)) for l,op in enumerate(x)]
+            # tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else jnp.roll(unit_matrices[l],k) for l,op in enumerate(x)]
+            grads_eval, jvp_eval = jax.jvp(grad_func, (x,), (tangents,))
 
             for j, element in enumerate(jvp_eval):
                 # we need to project each of them and store in an array that has information about the index k
+                if metric == 'euclidean':
+                    # z = project(x[j],element)
+                    alpha0, alpha1 = 1, 1
+                elif metric == 'canonical':
+                    alpha0, alpha1 = 1, 1/2
+
+                # if is_in_tangent_space(x[j],jvp_eval[j]):
+                #     print('tangent')
+                # else:
+                #     print('not tangent')
+                z = riemannian_connection(D_nu=element, nu=grads_eval[j], eta=tangents[j], x=x[j], alpha0=alpha0, alpha1=alpha1)
                 if vector:            
                     # NOTE: changing to store only parametrization here to adhere to trust_region function 
-                    xi_dxk[j][:,k] +=  parametrization_from_tangent(X=x[j], Z=project(x[j],element), X_comp=x_comps[j], stack=True).reshape(-1).astype(np.float64)
+                    xi_dxk[j][:,k] +=  parametrization_from_tangent(X=x[j], Z=z, X_comp=x_comps[j], stack=True).reshape(-1)
                 else:
-                    xi_dxk[j][:,:,k] += parametrization_from_tangent(X=x[j], Z=project(x[j],element), stack=True)
+                    xi_dxk[j][:,:,k] += parametrization_from_tangent(X=x[j], Z=z, stack=True)
         hessian_columns.append(xi_dxk)
     return hessian_columns
 
 
-def riemannian_hessian_vec(x, func, transpose:bool=False):
+def riemannian_hessian_vec(x, func, transpose:bool=False, metric:str='euclidean'):
     "riemannian hessian matrix of func evaluated at list of Stiefel matrices x"
-    hessian_columns = riemannian_hessian(x, func, vector=True) 
+    hessian_columns = riemannian_hessian(x, func, vector=True, metric=metric) 
     n = len(x)
     size_vec = hessian_columns[0][0].shape[0]
     # NOTE on shape: 0th: column, 1st: row, 2,3: from (size, size) from jvp of grad_func
