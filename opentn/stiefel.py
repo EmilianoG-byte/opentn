@@ -19,7 +19,7 @@ def project(X:np.ndarray, Z:np.ndarray):
     From https://arxiv.org/pdf/2112.05176.pdf eq.26
     """
     # TODO: add back the conj
-    return Z - 0.5 * X @ (X.T @ Z + Z.T @ X)
+    return Z - X @ symmetrize(X.T @ Z)
 
 def symmetrize(A:np.ndarray):
     """
@@ -45,6 +45,26 @@ def metric(delta1:np.ndarray, delta2:np.ndarray, X:np.ndarray):
     gamma = np.eye(dim) - 0.5 * (X@X.conj().T)
     return np.trace(delta1.conj().T@gamma@delta2).real
 
+def tuple2int(i:int, j:int, cols:int):
+    "flatten tuple (i,j) row-wise to single integer"
+    assert 0 <= j < cols, 'j out of range' # alternatively could use j%cols instead  of just j
+    return i*cols + j
+
+def int2tuple(k:int, cols:int):
+    "unflatten integer k to tuple (i,j) assuming row-wise traverse of matrix"
+    return k//cols, k%cols
+
+def get_k_unit_matrix(dim0:int, dim1:int, k:int=0):
+    "get the k-th Eij matrix of shape `dim0` x `dim1`, i.e. matrix with zero everywhere except at (i,j) where it is 1"
+    assert 0<= k < dim0*dim1, f'k:{k} value is out of range'
+    Ek = np.zeros(shape=(dim0, dim1), dtype=np.float64)
+    Ek[0,0] = 1
+    return np.roll(Ek, shift=k)
+
+def get_ij_unit_matrix(dim0:int, dim1:int, i:int=0, j:int=0):
+    "get the Eij matrix of shape `dim0` x `dim1`, i.e. matrix with zero everywhere except at (i,j) where it is 1"
+    return get_k_unit_matrix(dim0, dim1, k=tuple2int(i,j,dim1))
+
 def get_unit_matrices(ops:list[np.ndarray]):
     """
     Get a list of unit matrices (matrices with zeros everywhere except on the [0,0] element with a 1 instead)
@@ -52,12 +72,48 @@ def get_unit_matrices(ops:list[np.ndarray]):
     """
     unit_matrices = []
     for op in ops:
-        # TODO: change dtype here if I want things to be complex. Right now it is just casting it (discarding real part)
-        tangent_vector = np.zeros_like(op, dtype=np.float64)
-        tangent_vector[0,0] = 1 
-        unit_matrices.append(tangent_vector)
+        unit_matrices.append(get_ij_unit_matrix(*op.shape))
     return unit_matrices
 
+def get_elementary_antisymmetric(k:int, p:int, x:np.ndarray):
+    """
+    create k-th antisymmetric elementary tangent direction
+
+    x @ (Eij^A - Eji^A), for Eij^A, Eji^A two p x p real matrices
+    """
+    Eij = get_ij_unit_matrix(dim0=p, dim1=p)
+    pass
+
+
+# def get_elementary_arbitrary():
+
+def get_elementary_tangent_direction(k:int, n:int, p:int):
+    """
+    Get the elementary tangent direction Eij that span the tangent space at isometry X of St(n,p)
+
+    For a tangent vector Z = X @ A + X_comp @ B in Tx(St(n,p)) the elementary tangent directions look like
+    - X_comp @ Eij^B, for Eij^B a (n-p) x p real matrix
+    - X @ (Eij^A-Eji^A), for Eij^A, Eji^A two p x p real matrices such that (Eij^A-Eji^A) is skew-hermitian (antisymmetric for real case)
+    
+    From https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=984753 equation 20
+
+    From `parametrization_from_tangent` we see that A is stacked before B so we will follow this convention here as well
+    when using the flattened index `k` to traverse the full space n x p.
+
+    NOTE: it is missing to explore if these are also the elementary directions also for the euclidean metric and not only the canonical one.
+    """
+
+    assert 0 <= k < n*p, 'k it is out of range'
+
+    if k < p**2:
+        "antisymmetric"
+        pass
+    else:
+        "general one"
+    return 
+
+
+    return 0
 def get_orthogonal_complement(X:np.ndarray):
     """
     Get the orthogonal complement matrix of X such that
@@ -73,9 +129,9 @@ def get_orthogonal_complement(X:np.ndarray):
     return factorize_psd_truncated(P_x_comp, chi_max=n-p)
 
 
-def get_symmetric(X:np.ndarray, Z:np.ndarray):
+def get_antisymmetric(X:np.ndarray, Z:np.ndarray):
     """
-    Get the symmetric component A from a general matrix Z
+    Get the anti-symmetric (skew-hermitian) component A from a general matrix Z
     
     Decomposition Z = X @ A + X_comp @ B + X @ C
 
@@ -126,7 +182,7 @@ def parametrization_from_tangent(X:np.ndarray, Z:np.ndarray, X_comp:np.ndarray =
     if X_comp is None:
         X_comp = get_orthogonal_complement(X)
 
-    A = get_symmetric(X, Z)
+    A = get_antisymmetric(X, Z)
     B = get_arbitrary(X_comp=X_comp, Z=Z, X=X)
     # print(A.dtype, B.dtype)
     if stack:
@@ -139,7 +195,7 @@ def tangent_from_parametrization(X:np.ndarray, A:np.ndarray, B:np.ndarray)->np.n
     n,p = X.shape
     assert A.shape == (p,p), "Wrong shape for A"
     assert B.shape == (n-p, p), "Wrong shape for B"
-    return X@A + get_orthogonal_complement(X)@B
+    return X @ A + get_orthogonal_complement(X) @ B
 
 def polar_decomposition_stiefel(X:np.ndarray, Z:np.ndarray):
     """
@@ -262,7 +318,7 @@ def riemannian_connection(D_nu, nu, eta, x, alpha0:int=1, alpha1:int=1):
     return D_nu + 0.5 * x @ (eta.T @ nu + nu.T @ eta) + ((alpha0-alpha1)/alpha0)*(In - x @ x.T) @ (eta @ nu.T + nu @ eta.T) @ x
 
 def riemannian_hessian(x, func, vector=False, metric:str='euclidean'):
-    "get riemannian hessian of func (needs to be the gradient of the actual function) evaluated at x"
+    "get riemannian hessian of func evaluated at x"
     grad_func = lambda xi: gradient_stiefel(xi, func)
     n = len(x)
     assert n == 3, 'wrong input size'
