@@ -689,7 +689,7 @@ def super2ortho(x:np.ndarray, rank:int=None)->np.ndarray:
     x = super2choi(x)
     if not rank:
         rank = np.linalg.matrix_rank(x)
-    return choi2ortho(factorize_psd_truncated(x, chi_max=rank))
+    return choi2ortho(factorize_psd_truncated(x, chi_max=rank, eps=1e-15)) # adding a super small epsilon to make sure rank is predominant
 
 def ortho2super(x:np.ndarray)->np.ndarray:
     """
