@@ -36,14 +36,14 @@ def antisymmetrize(A:np.ndarray):
     # TODO: add back the conj
     return 0.5 * (A- A.T)
 
-def metric(delta1:np.ndarray, delta2:np.ndarray, X:np.ndarray):
+def canonical_metric(delta1:np.ndarray, delta2:np.ndarray, x:np.ndarray):
     """
-    Riemannian metric between delta1 and delta2 in tangent space of matrix X in Stiefel manifold. 
+    Riemannian metric between delta1 and delta2 in tangent space of matrix x in Stiefel manifold. 
     From https://arxiv.org/abs/2112.05176 eq. 24
     """
-    dim = X.shape[0]
-    gamma = np.eye(dim) - 0.5 * (X@X.conj().T)
-    return np.trace(delta1.conj().T@gamma@delta2).real
+    n = x.shape[0]
+    gamma = np.eye(n) - 0.5 * (x@x.conj().T)
+    return np.trace(delta1.conj().T @ gamma @ delta2).real
 
 def tuple2int(i:int, j:int, cols:int):
     "flatten tuple (i,j) row-wise to single integer"
@@ -56,7 +56,7 @@ def int2tuple(k:int, cols:int):
 
 def get_k_unit_matrix(dim0:int, dim1:int, k:int=0):
     "get the k-th Eij matrix of shape `dim0` x `dim1`, i.e. matrix with zero everywhere except at (i,j) where it is 1"
-    assert 0<= k < dim0*dim1, f'k:{k} value is out of range'
+    assert 0<= k < dim0*dim1, f'k:{k} value is out of range. Should be in f[0,{dim0*dim1})'
     Ek = np.zeros(shape=(dim0, dim1), dtype=np.float64)
     Ek[0,0] = 1
     return np.roll(Ek, shift=k)
@@ -75,21 +75,31 @@ def get_unit_matrices(ops:list[np.ndarray]):
         unit_matrices.append(get_ij_unit_matrix(*op.shape))
     return unit_matrices
 
-def get_elementary_antisymmetric(k:int, p:int, x:np.ndarray):
+def get_elementary_antisymmetric(k:int, x:np.ndarray):
     """
-    create k-th antisymmetric elementary tangent direction
+    create k-th antisymmetric elementary tangent direction of tangent space at isometry x
 
     x @ (Eij^A - Eji^A), for Eij^A, Eji^A two p x p real matrices
     """
-    Eij = get_ij_unit_matrix(dim0=p, dim1=p)
-    pass
+    p = x.shape[1]
+    Eij = get_k_unit_matrix(dim0=p, dim1=p, k=k)
+    return x @ (Eij - Eij.T)
 
 
-# def get_elementary_arbitrary():
-
-def get_elementary_tangent_direction(k:int, n:int, p:int):
+def get_elementary_arbitrary(k:int, x:np.ndarray):
     """
-    Get the elementary tangent direction Eij that span the tangent space at isometry X of St(n,p)
+    create k-th arbitrary elementary tangent direction of tangent space at isometry x
+
+    X_comp @ Eij, for Eij a (n-p) x p real matrix
+    """
+    x_comp = get_orthogonal_complement(x)
+    n, p = x.shape
+    Eij = get_k_unit_matrix(dim0=(n-p), dim1=p, k=k)
+    return x_comp @ Eij
+
+def get_elementary_tangent_direction(k:int, x:np.ndarray):
+    """
+    Get the elementary tangent direction Eij that span the tangent space at isometry x of St(n,p)
 
     For a tangent vector Z = X @ A + X_comp @ B in Tx(St(n,p)) the elementary tangent directions look like
     - X_comp @ Eij^B, for Eij^B a (n-p) x p real matrix
@@ -102,31 +112,29 @@ def get_elementary_tangent_direction(k:int, n:int, p:int):
 
     NOTE: it is missing to explore if these are also the elementary directions also for the euclidean metric and not only the canonical one.
     """
-
+    n, p = x.shape
     assert 0 <= k < n*p, 'k it is out of range'
 
     if k < p**2:
-        "antisymmetric"
-        pass
+        # antisymmetric
+        return get_elementary_antisymmetric(k, x)
     else:
-        "general one"
-    return 
+        # arbitrary. Need to shift down the k to be in [0, (n-p)*p] not in [p**2, p**2 + (n-p)*p]
+        return get_elementary_arbitrary(k-(p**2), x)
 
-
-    return 0
 def get_orthogonal_complement(X:np.ndarray):
     """
     Get the orthogonal complement matrix of X such that
 
     [X, X_comp].conj().T @ [X, X_comp] = I
 
-    see 'notation' in https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=984753
+    see 'notation' in https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=984753 lemma 8
     """
     n, p = X.shape
     # TODO: add back the conj
     P_x = X @ X.T 
     P_x_comp = np.eye(n) - P_x
-    return factorize_psd_truncated(P_x_comp, chi_max=n-p)
+    return factorize_psd_truncated(P_x_comp, chi_max=n-p, eps=1e-15) # adding eps=1e-15 to make sure rank is the predominant factor to keep singular values
 
 
 def get_antisymmetric(X:np.ndarray, Z:np.ndarray):
@@ -267,28 +275,49 @@ def is_symmetric(C:np.ndarray):
     "checks if a matrix is symmetric or not"
     return np.allclose(C, C.conj().T)
 
-def gradient_metric(x:np.ndarray, gradient:np.ndarray, alpha0:int=1, alpha1:int=1):
+def gradient_ambient2riemannian(x:np.ndarray, gradient:np.ndarray, alpha0:int=1, alpha1:int=1):
     """
     riemannian gradient at x of Stiefel manifold. Metric determined by (alpha)_i
     
-    See section 5 of https://link.springer.com/epdf/10.1007/s10957-023-02242-z?sharing_token=jNw8qcq4tY-JPigTOShOyve4RwlQNchNByi7wbcMAY7kjfPNTsczaium2SDXasEb5TrNgE65puF_yyAi9lcZuzAlYtAYWMvC_0NZLZqqhJSzU3NQTEjdZ-b40F1KWSWHs7seC9kT8XtPW1N_7VFWplF12YK022IazHqGgPvHONY%3D
+    See section 5 of https://arxiv.org/abs/2009.10159
+
     embedded (euclidean):
     alpha0 = alpha1 = 1
-
     canonical:
     alpha0 = 1, alpha1 = 1/2
     """
     return (1/alpha0) * gradient + 0.5 * ((1/alpha1) - (2/alpha0)) * x @ x.T @ gradient - 0.5 * (1/alpha1) * x @ gradient.T @ x
 
+def gradient_stiefel_general(xi, func, alpha0=1, alpha1=1):
+    """
+    Compute the riemannian gradient using a general metric for the tangent space parametrized by alpha0 and alpha1
+
+    From https://arxiv.org/abs/2009.10159 below equation 5.2
+
+    embedded (euclidean):
+    alpha0 = alpha1 = 1
+    canonical:
+    alpha0 = 1, alpha1 = 1/2
+    """
+
+    grads_ambient = jax.grad(func)(xi)
+    return [
+        gradient_ambient2riemannian(x, grad, alpha0=alpha0, alpha1=alpha1) for x,grad in zip(xi, grads_ambient)
+    ]
+
 def gradient_stiefel(xi, func):
-    "compute riemannian gradient for all xi, returning a list"
+    """
+    Compute the riemannian gradient using the euclidean/embedded/constant trace metric
+
+    From https://assets.press.princeton.edu/chapters/absil/Absil_Chap3.pdf equation 3.37
+    """
     Zi = jax.grad(func)(xi)
     return [project(X, Z)
     for X,Z in zip(xi, Zi)]
 
 def gradient_canonical(xi, func):
     """
-    returns the gradient given implicitely by the use of the canonical metric in tangent space. 
+    Compute the riemannian gradient using the canonical metric in tangent space. 
     From https://math.mit.edu/~edelman/publications/geometry_of_algorithms.pdf eq.2.53
     FY - YFYTY.
     """
@@ -318,11 +347,17 @@ def riemannian_connection(D_nu, nu, eta, x, alpha0:int=1, alpha1:int=1):
     return D_nu + 0.5 * x @ (eta.T @ nu + nu.T @ eta) + ((alpha0-alpha1)/alpha0)*(In - x @ x.T) @ (eta @ nu.T + nu @ eta.T) @ x
 
 def riemannian_hessian(x, func, vector=False, metric:str='euclidean'):
-    "get riemannian hessian of func evaluated at x"
-    grad_func = lambda xi: gradient_stiefel(xi, func)
+    "get riemannian hessian of func evaluated at x based on metric"
+    if metric == 'euclidean':
+        alpha0, alpha1 = 1, 1
+    elif metric == 'canonical':
+        alpha0, alpha1 = 1, 1/2
+
+    grad_func = lambda xi: gradient_stiefel_general(xi, func, alpha0=alpha0, alpha1=alpha1)
+
     n = len(x)
     assert n == 3, 'wrong input size'
-    unit_matrices = get_unit_matrices(x)
+    # unit_matrices = get_unit_matrices(x)
     x_comps = [get_orthogonal_complement(xi) for xi in x]
     hessian_columns = []
 
@@ -344,17 +379,15 @@ def riemannian_hessian(x, func, vector=False, metric:str='euclidean'):
             # if k%100 == 0:
                 # print('element: ', k)
             # TODO: not project the unit matrices ?
-            tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else project(X=op, Z=jnp.roll(unit_matrices[l],k)) for l,op in enumerate(x)]
+            # tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else project(X=op, Z=jnp.roll(unit_matrices[l],k)) for l,op in enumerate(x)]
             # tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else jnp.roll(unit_matrices[l],k) for l,op in enumerate(x)]
+            tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else get_elementary_tangent_direction(k, op) for l, op in enumerate(x)]
+
             grads_eval, jvp_eval = jax.jvp(grad_func, (x,), (tangents,))
 
             for j, element in enumerate(jvp_eval):
                 # we need to project each of them and store in an array that has information about the index k
-                if metric == 'euclidean':
-                    # z = project(x[j],element)
-                    alpha0, alpha1 = 1, 1
-                elif metric == 'canonical':
-                    alpha0, alpha1 = 1, 1/2
+                # z = project(x[j],element)
 
                 # if is_in_tangent_space(x[j],jvp_eval[j]):
                 #     print('tangent')
