@@ -228,7 +228,7 @@ def polar_decomposition_rectangular(X:np.ndarray, Z:np.ndarray):
 def retract_stiefel(x_list:list[np.ndarray], eta:np.ndarray):
     "retraction from tanget space at x to original manifold of x"
     # here we have to assume that all x have the same shape 
-    params_list =  parametrizations_from_vector(eta, shapes=[op.shape for op in x_list]) # np.reshape(eta, ((n,) + x_list[0].shape))
+    params_list = parametrizations_from_vector(eta, shapes=[op.shape for op in x_list]) # np.reshape(eta, ((n,) + x_list[0].shape))
     # in theory if we want to emulate what is going on with unitaries, we have to:
     # project the eta[j] onto the tangent space of the vlist[j].
     dxlist = [tangent_from_parametrization(x, *params) for x,params in zip(x_list, params_list)]

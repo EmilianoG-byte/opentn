@@ -679,17 +679,20 @@ def ortho2choi(x:np.ndarray, dim:int=None)->np.ndarray:
     x = x.swapaxes(1,2).reshape([dim**2, k])
     return x
 
-def super2ortho(x:np.ndarray, rank:int=None)->np.ndarray:
+def super2ortho(x:np.ndarray, rank:int=None, eps:float=1e-30)->np.ndarray:
     """
     Transform the superoperator x into its isometric form (Sitefel Manifold)
 
     This looks like: superop -> choi -> choi_factor -> stiefel
+
+    if no epsilon is given, the default value is set to be `numerically zero` so the rank determines
+    the number of singular values to keep in `factorize_psd_truncated`.
     """
     # convert to choi first to calculate the correct rank
     x = super2choi(x)
     if not rank:
         rank = np.linalg.matrix_rank(x)
-    return choi2ortho(factorize_psd_truncated(x, chi_max=rank, eps=1e-15)) # adding a super small epsilon to make sure rank is predominant
+    return choi2ortho(factorize_psd_truncated(x, chi_max=rank, eps=eps)) 
 
 def ortho2super(x:np.ndarray)->np.ndarray:
     """
