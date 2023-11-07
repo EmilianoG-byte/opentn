@@ -375,10 +375,6 @@ def riemannian_hessian(x, func, vector=False, metric:str='euclidean'):
             xi_dxk = [np.zeros(op.shape + (dxk_size,), dtype=np.float64) for op in x]
         
         for k in range(dxk_size):
-            # printing every 100 steps to see progress
-            # if k%100 == 0:
-                # print('element: ', k)
-            # TODO: not project the unit matrices ?
             # tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else project(X=op, Z=jnp.roll(unit_matrices[l],k)) for l,op in enumerate(x)]
             # tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else jnp.roll(unit_matrices[l],k) for l,op in enumerate(x)]
             tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else get_elementary_tangent_direction(k, op) for l, op in enumerate(x)]
@@ -388,11 +384,6 @@ def riemannian_hessian(x, func, vector=False, metric:str='euclidean'):
             for j, element in enumerate(jvp_eval):
                 # we need to project each of them and store in an array that has information about the index k
                 # z = project(x[j],element)
-
-                # if is_in_tangent_space(x[j],jvp_eval[j]):
-                #     print('tangent')
-                # else:
-                #     print('not tangent')
                 z = riemannian_connection(D_nu=element, nu=grads_eval[j], eta=tangents[j], x=x[j], alpha0=alpha0, alpha1=alpha1)
                 if vector:            
                     # NOTE: changing to store only parametrization here to adhere to trust_region function 
