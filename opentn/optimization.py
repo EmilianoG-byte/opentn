@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from typing import Callable
 from jax import jit
-from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition, ortho2choi, compose_superops_list, unfactorize_psd, tensor_to_matrix, ortho2super, create_kitaev_liouvillians, lindbladian2super, exp_operator_dt, super2ortho
+from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition, ortho2choi, compose_superops_list, unfactorize_psd, tensor_to_matrix, ortho2super, create_kitaev_liouvillians, lindbladian2super, exp_operator_dt, super2ortho, get_kitaev_nn_linbladian
 import cvxpy as cvx
 
 from jax import config
@@ -81,36 +81,36 @@ def model_Zs(Wi:np.ndarray, Xj:np.ndarray, Xk:np.ndarray, N:int, order:np.ndarra
 
 def model_stiefel_local(xs:np.ndarray, N:int, d:int)->np.ndarray:
     """
-    Optimization model for stiefel local (2-site) operators
+    Optimization model for len(xs)-layers of stiefel operators acting locally on two sites.
 
-    Pipeline is:
-    stiefel -> choi_sqrt -> choi -> superop_local -> superop_full_split -> superop_full -> compose them
+    NOTE (definitions):
+    n:= number of time steps := tau/timestep
+    m:= len(xs) := number of layers := 3*n - (n-1)
+
+    NOTE: Pipeline for converting each x in xs from stiefel to superop is:
+    * stiefel -> choi_sqrt -> choi -> superop_local -> superop_full_split -> superop_full -> compose them
 
     Where superop_full_split is a superoperator with the pattern (i, i+1, i*, i+1*) for i in [0,N-1]
     And superop_full has the pattern (0,....,N-1, 0*, ..., N-1*)
+
+    We assume the sites over which the sub-layers act alternate between odd-even (second order trotter), where the even layer is subject to periodic boundary conditions (pbc)
+    Even for higher n>1, we still have this pattern because the last sublayer of each time step gets contracted with the first sublayer of the next timestep (except for the last timestep)
     """
-    assert len(xs)==3, 'only odd-even-odd structure allowed'
+    # This condition was relaxed!
+    # assert len(xs)==3, 'only odd-even-odd structure allowed'
     superops_local = [ortho2super(x) for x in xs]
     # we assume the same operator acts on all sites (unlike before for even layer)
     superops_full_split = [create_supertensored_from_local(localop=op, N=N, pbc=True) for op in superops_local]
     # here the conversion changes for odd and even layer
     superops_full = []
     for i, op in enumerate(superops_full_split):
+        # we assume an odd-even structure
         if i%2 == 1:
             pbc = True
         else:
             pbc = False
         superops_full.append(convert_supertensored2liouvillianfull(op, N=N, d=d, shift_pbc=pbc))
     return compose_superops_list(superops_full)
-
-def model_stiefel_local_n_layers(xs:np.ndarray, N:int, d:int, n:int)->np.ndarray:
-    """
-    Optimization model for n layers of stiefel 2-site operators
-
-    We assume the standard odd-even-odd (second order trotter) approximation for each sublayer 
-    """
-    superop_one_layer = model_stiefel_local(xs=xs, N=N, d=d)
-    return compose_superops_list([superop_one_layer]*n)
 
 @jit
 def model_Ys(xs:np.ndarray):
@@ -134,9 +134,25 @@ def compute_loss(xi:np.ndarray, loss_fn, model, exact:np.ndarray, **kwargs):
     assert exact.ndim == prediction.ndim == 2, 'not a matrix'
     return jit(loss_fn)(exact, prediction)
 
+def get_kitaev_trotter_local_ansatz(gamma:float, tau:int, n:int)->list[np.ndarray]:
+    """
+    List of stiefel operators used in the second-order trotter approximation 
+    of the dissipative evolution corresponding to the kitaev wire noise model
+    using `n` time steps
+
+    `len()` of output is the number of layers in trotterization:= 3n - (n-1) = 2n + 1
+    """
+    time_step = tau/n
+    Lnn = get_kitaev_nn_linbladian(gamma)
+    superop_nn = lindbladian2super(Li=[Lnn])
+
+    exp_nn_half_step = exp_operator_dt(superop_nn, tau=time_step/2, backend='jax')
+    exp_nn_full_step = exp_operator_dt(superop_nn, tau=time_step, backend='jax')
+    return [exp_nn_half_step] + [exp_nn_full_step]*(2*n-1) + [exp_nn_half_step]
+
 def compute_kitaev_approximation_error(d:int, N:int, gamma:float, tau:int, n:int, xs:list[np.ndarray]=None)->float:
     """
-    Compute the approximation error in the dissipative evolution of the kitaev wire model by trotterization.
+    Compute the approximation error in the dissipative evolution of the kitaev wire noise model by trotterization.
 
     args:
     ---------
@@ -149,28 +165,24 @@ def compute_kitaev_approximation_error(d:int, N:int, gamma:float, tau:int, n:int
     tau:
         total evolution time
     n:
-        number of layers in trotterization
+        number of timesteps in trotterization. tau = n * time_step
     xs:
-        list of 3 two-site operators of the stiefel manifold 
-        corresponding to the local kitaev noise channel on each layer.
-        An odd-even-odd structure is assumed.
-        If None, we generate the ansatz from trotter-suzuki decomposition.
+        list of 3n - (n-1) = 2n + 1 operators of the stiefel manifold acting on two sites 
+        (4-effective counting the conjugate), such that each operator is of shape: (d**2 * rank, d**2)
+        corresponding to the local-two-site kitaev noise channel.
+        An alternating odd-even structure is assumed.
+        If None, we generate the ansatz from trotter-suzuki decomposition using `get_kitaev_trotter_local_ansatz`.
     returns:
     ---------
         approximation error
     """
-    # effective tau per layer
-    tau_n = tau/n
-    Lvec, _, _, Lnn = create_kitaev_liouvillians(N=N, d=d, gamma=gamma, pbc=True)
+    Lvec, *_ = create_kitaev_liouvillians(N=N, d=d, gamma=gamma, pbc=True)
 
     if not xs:
-        superop_nn = lindbladian2super(Li=[Lnn])
-        exp_nn_odd_n = exp_operator_dt(superop_nn, tau=tau_n/2, backend='jax')
-        exp_nn_even_n = exp_operator_dt(superop_nn, tau=tau_n, backend='jax')
-        xs = [exp_nn_odd_n, exp_nn_even_n, exp_nn_odd_n]
+        xs = get_kitaev_trotter_local_ansatz(gamma, tau, n)
 
     exp_Lvec = exp_operator_dt(Lvec, tau=tau, backend='jax')
-    f_stiefel_n_layers = lambda xi: frobenius_norm(model_stiefel_local_n_layers(xi, N=N, d=d, n=n), exp_Lvec)
+    f_stiefel_n_layers = lambda xi: frobenius_norm(model_stiefel_local(xi, N=N, d=d), exp_Lvec)
     xs_stiefel_n_layers = [super2ortho(x.real, rank=2) for x in xs]
 
     return f_stiefel_n_layers(xs_stiefel_n_layers)

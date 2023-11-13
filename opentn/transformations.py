@@ -333,6 +333,7 @@ def get_kitaev_nn_linbladian(gamma:float):
 
 def create_kitaev_liouvillians(N:int, d:int, gamma:float, pbc:bool=False):
     "create the liouvillians corresponding to the kitaev wire noise model"
+    # TODO: Lnn should no be returned in create_2local_liouvillians
     Lnn = get_kitaev_nn_linbladian(gamma)
     Lvec, Lvec_odd, Lvec_even, Lnn = create_2local_liouvillians(Lnn, N, d, pbc)
     return Lvec, Lvec_odd, Lvec_even, Lnn

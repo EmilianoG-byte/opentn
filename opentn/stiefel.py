@@ -356,8 +356,8 @@ def riemannian_hessian(x, func, vector=False, metric:str='euclidean'):
     grad_func = lambda xi: gradient_stiefel_general(xi, func, alpha0=alpha0, alpha1=alpha1)
 
     n = len(x)
-    assert n == 3, 'wrong input size'
-    # unit_matrices = get_unit_matrices(x)
+    # relaxed this condition
+    # assert n == 3, 'wrong input size'
     x_comps = [get_orthogonal_complement(xi) for xi in x]
     hessian_columns = []
 
