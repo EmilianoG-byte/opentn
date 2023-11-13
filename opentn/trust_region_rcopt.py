@@ -2,7 +2,7 @@ import numpy as np
 import warnings
 
 
-def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, **kwargs):
+def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, save_x=False ,**kwargs):
     """
     Optimization via the Riemannian trust-region (RTR) algorithm.
 
@@ -11,6 +11,25 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, **k
         P.-A. Absil, R. Mahony, Rodolphe Sepulchre
         Optimization Algorithms on Matrix Manifolds
         Princeton University Press (2008)
+    
+    args:
+    ---------
+    f: 
+        real valued function representing the optimization problem. 
+        it should accept as single input a list of elements of the manifold to optimze over.
+    retract:
+        retraction from tanget space at x to original manifold. 
+        signature: x_list:list of elements of manifold, eta: array containing the parametrization of the tangent elements
+    eps:
+        tolerance outside of which singular values will not be kept.
+        See calculation below on how to determine how many singular values
+        to actually keep
+
+    returns:
+    ---------
+    u, v, s:
+        isometries u, v and list of singular values s
+
     """
     rho_trust   = kwargs.get("rho_trust", 0.125)
     radius_init = kwargs.get("radius_init", 0.01)
@@ -27,13 +46,13 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, **k
     radius = radius_init
     f_iter = []
     g_iter = []
+    x_iter = [x]
+
     if gfunc is not None:
         g_iter.append(gfunc(x))
     for k in range(niter):
         print(f'iteration: {k}')
-        if not all([(op.dtype == np.float64) for op in x]):
-            print('complex value found in outer loop')
-            x = [op.astype(np.float64) for op in x]
+
         grad = gradfunc(x)
         hess = hessfunc(x)
         eta, on_boundary = truncated_cg(grad, hess, radius, **tcg_kwargs)
@@ -53,7 +72,9 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, **k
             x = x_next
         if gfunc is not None:
             g_iter.append(gfunc(x))
-    return x, f_iter, g_iter, radius
+        if save_x: # saving it here so I get the updated one.
+            x_iter.append(x)
+    return x_iter, f_iter, g_iter, radius # x_iter will have 1 more element f_iter
 
 
 def truncated_cg(grad, hess, radius, **kwargs):
