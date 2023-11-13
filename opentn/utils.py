@@ -13,6 +13,7 @@ def set_discrete_labels(labels:list[str], ax=None):
     ax.xaxis.set_ticklabels(labels, rotation=65)
 
 def set_integer_labels(ax=None):
+    "must be called after plotting the data (e.g. right before `plt.legend()`)"
     if ax is None:
         ax = plt.gca()
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
