@@ -20,16 +20,18 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, sav
     retract:
         retraction from tanget space at x to original manifold. 
         signature: x_list:list of elements of manifold, eta: array containing the parametrization of the tangent elements
-    eps:
-        tolerance outside of which singular values will not be kept.
-        See calculation below on how to determine how many singular values
-        to actually keep
 
     returns:
     ---------
-    u, v, s:
-        isometries u, v and list of singular values s
-
+    x_iter:
+        if `save_x = True`, it is a list with all the x's used in the `niter` iterations (list of lists)
+        else, it returns the last x. Note that the last x is not used to compute f(x).
+    f_iter:
+        evaluation of the cost function across the `niter` iterations
+    g_iter:
+        evaluation of the error function. Not used
+    radius:
+        last radius used in the trust region algorithm
     """
     rho_trust   = kwargs.get("rho_trust", 0.125)
     radius_init = kwargs.get("radius_init", 0.01)

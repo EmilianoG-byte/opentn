@@ -36,7 +36,36 @@ def antisymmetrize(A:np.ndarray):
     # TODO: add back the conj
     return 0.5 * (A- A.T)
 
-def canonical_metric(delta1:np.ndarray, delta2:np.ndarray, x:np.ndarray):
+def square_to_upper_triangular(a:np.ndarray)->np.ndarray:
+    "get the upper triangular of matrix `a` as a vector (does not include main diagonal)"
+    return a[np.triu_indices_from(a, k=1)]
+
+def upper_triangular_to_antisymmetric(upper:np.ndarray, p:int)->np.ndarray:
+    "get the antisymmetric matrix of shape (p, p) from the upper triangular (as a 1D array)"
+    assert upper.ndim == 1
+    assert len(upper) == antisymmetric_dof(p=p), f"length of upper:{len(upper)} does not match with p:{p}"
+    a = np.zeros((p, p))
+    a[np.triu_indices(p, k=1)] = upper
+    a -= a.T
+    return a
+
+def antisymmetric_dof(x:np.ndarray=None, p:int=None)->int:
+    "Degrees of freedom of the antisymmetric component of the tangent space from x of the stiefel manifold"
+    if not p:
+        n, p = x.shape
+    return p * (p - 1) // 2 # this is guaranteed to be an integer since p*(p-1) is always divisble by 2
+
+def arbitrary_dof(x:np.ndarray=None, n:int=None, p:int=None)->int:
+    "Degrees of freedom of the arbitrary component of the tangent space from x of the stiefel manifold"
+    if not n or not p:
+        n, p = x.shape
+    return p * (n - p)
+
+def stiefel_tangent_dof(x:np.ndarray)->int:
+    "Degrees of freedom of the tangent space from x of the stiefel manifold"
+    return antisymmetric_dof(x) + arbitrary_dof(x)
+
+def canonical_metric(delta1:np.ndarray, delta2:np.ndarray, x:np.ndarray)->float:
     """
     Riemannian metric between delta1 and delta2 in tangent space of matrix x in Stiefel manifold. 
     From https://arxiv.org/abs/2112.05176 eq. 24
@@ -44,6 +73,14 @@ def canonical_metric(delta1:np.ndarray, delta2:np.ndarray, x:np.ndarray):
     n = x.shape[0]
     gamma = np.eye(n) - 0.5 * (x@x.conj().T)
     return np.trace(delta1.conj().T @ gamma @ delta2).real
+
+def euclidean_metric(delta1:np.ndarray, delta2:np.ndarray)->float:
+    """
+    Constant trace metric between delta1 and delta2 in tangent space of matrix x in Stiefel manifold
+
+    Euclidean/Embedded metric independent of x
+    """
+    return np.trace(delta1.conj().T @ delta2).real
 
 def tuple2int(i:int, j:int, cols:int):
     "flatten tuple (i,j) row-wise to single integer"
@@ -80,10 +117,15 @@ def get_elementary_antisymmetric(k:int, x:np.ndarray):
     create k-th antisymmetric elementary tangent direction of tangent space at isometry x
 
     x @ (Eij^A - Eji^A), for Eij^A, Eji^A two p x p real matrices
+
+    We have updated it such that the k only traverses the upper triangle, and from it we obtain
+    the antisymmetric matrix: (Eij^A - Eji^A)
     """
     p = x.shape[1]
-    Eij = get_k_unit_matrix(dim0=p, dim1=p, k=k)
-    return x @ (Eij - Eij.T)
+    
+    Eij = np.zeros(antisymmetric_dof(x))
+    Eij[k] = 1
+    return x @ upper_triangular_to_antisymmetric(upper=Eij, p=p)
 
 
 def get_elementary_arbitrary(k:int, x:np.ndarray):
@@ -112,15 +154,15 @@ def get_elementary_tangent_direction(k:int, x:np.ndarray):
 
     NOTE: it is missing to explore if these are also the elementary directions also for the euclidean metric and not only the canonical one.
     """
-    n, p = x.shape
-    assert 0 <= k < n*p, 'k it is out of range'
 
-    if k < p**2:
+    assert 0 <= k < stiefel_tangent_dof(x), 'k it is out of range'
+
+    if k < antisymmetric_dof(x):
         # antisymmetric
         return get_elementary_antisymmetric(k, x)
     else:
         # arbitrary. Need to shift down the k to be in [0, (n-p)*p] not in [p**2, p**2 + (n-p)*p]
-        return get_elementary_arbitrary(k-(p**2), x)
+        return get_elementary_arbitrary(k - antisymmetric_dof(x), x)
 
 def get_orthogonal_complement(X:np.ndarray):
     """
@@ -157,7 +199,7 @@ def get_arbitrary(X_comp:np.ndarray, Z:np.ndarray, X:np.ndarray=None, Px_comp:np
     From https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=984753 lemma 8.
     """
     if Px_comp is None and X is not None:
-        n,p = X.shape
+        n, p = X.shape
          # TODO: add back the conj
         Px_comp = np.eye(n) - X @ X.T
     elif Px_comp is None and X is None: 
@@ -166,18 +208,37 @@ def get_arbitrary(X_comp:np.ndarray, Z:np.ndarray, X:np.ndarray=None, Px_comp:np
     return X_comp.T @ Px_comp @ Z
 
 def parametrizations_from_vector(param_vec:np.ndarray, shapes:list[tuple[int]])->np.ndarray:
-    "Convert a long vector that includes all the parametrizations of the tangent spaces onto a list of individual parametrizations"
-    param_vec_lst = vec2list(param_vec, sizes=[np.prod(shape) for shape in shapes]) # len(shapes), size
+    """
+    Convert a long vector (stacked) containing all the parametrizations of the tangent spaces onto a list 
+    of tuples with the individual parametrizations.
+
+    args:
+    ---------
+    param_vec:
+        long 1d-array containing the parametrization of all the tangent vectors.
+        It contains np.hstack([A_upper, B.reshape(-1)]) for each of the x (stiefel operator) 
+        corresponding to a shape in `shapes`
+    shapes:
+        list of shapes of each of the stiefel operators x. These are the manifolds at which the 
+        parametrizations in `param_vec` are tangent.
+    returns:
+    ---------
+        list of tuples containing the individual parametrizations (A,B) for each of the tangent vectors
+    """
+    # divide the full vector into a list of equally splitted len(shapes)-arrays
+    params_vec_split = np.hsplit(param_vec, len(shapes)) # 
     # now I should divide each of the elements onto 2 vectors of size p**2, (n-p)p and unvectorize them
     params = []
     for i, shape in enumerate(shapes):
         n,p = shape
-        A_vec = param_vec_lst[i][:p**2]
-        B_vec = param_vec_lst[i][p**2:]
-        params.append((unvectorize(A_vec, p, p),unvectorize(B_vec, n-p, p)))
+        # NOTE: changed here since we are only storing the upper triangle
+        upper_size = antisymmetric_dof(p=p)
+        A_upper = params_vec_split[i][:upper_size]
+        B_vec = params_vec_split[i][upper_size:]
+        params.append((upper_triangular_to_antisymmetric(A_upper, p=p), unvectorize(B_vec, n-p, p)))
     return params
 
-def parametrization_from_tangent(X:np.ndarray, Z:np.ndarray, X_comp:np.ndarray = None ,stack:bool=True):
+def parametrization_from_tangent(X:np.ndarray, Z:np.ndarray, X_comp:np.ndarray = None ,stack:bool=True, vectorized:bool=True):
     """
     Get the A and B matrices that parametrize the Z matrix of the tangent space of stiefel manifold at X
     
@@ -186,15 +247,26 @@ def parametrization_from_tangent(X:np.ndarray, Z:np.ndarray, X_comp:np.ndarray =
     with X_comp the orthogonal complement of X.
 
     From https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=984753 lemma 8.
+
+    NOTE (update): If `stack=True`, it will now only store the upper diagonal part of A.
+    This corresponds to the actual degrees of freedom in A for real-valued matrices.
+    To be able to stack it with B, I also need to convert B to a vector and to hstack.
+
+    Added `vectorized` flag to keep it compatible with the non-vectorized hessian implementation
     """
     if X_comp is None:
         X_comp = get_orthogonal_complement(X)
 
     A = get_antisymmetric(X, Z)
     B = get_arbitrary(X_comp=X_comp, Z=Z, X=X)
-    # print(A.dtype, B.dtype)
+    
     if stack:
-        return np.vstack([A,B], dtype=np.float64)
+        if vectorized:
+            A_upper = square_to_upper_triangular(A) # ndim = 1
+            # how to stack different elements: https://stackoverflow.com/questions/33356442/when-should-i-use-hstack-vstack-vs-append-vs-concatenate-vs-column-stack
+            return jnp.hstack([A_upper,B.reshape(-1)], dtype=np.float64)
+        else:
+            return jnp.vstack([A, B], dtype=np.float64)
     else:
         return A, B
     
@@ -225,14 +297,30 @@ def polar_decomposition_rectangular(X:np.ndarray, Z:np.ndarray):
     """
     return polar(X+Z)[0] 
 
-def retract_stiefel(x_list:list[np.ndarray], eta:np.ndarray):
-    "retraction from tanget space at x to original manifold of x"
-    # here we have to assume that all x have the same shape 
-    params_list = parametrizations_from_vector(eta, shapes=[op.shape for op in x_list]) # np.reshape(eta, ((n,) + x_list[0].shape))
-    # in theory if we want to emulate what is going on with unitaries, we have to:
-    # project the eta[j] onto the tangent space of the vlist[j].
-    dxlist = [tangent_from_parametrization(x, *params) for x,params in zip(x_list, params_list)]
-    return [polar_decomposition_rectangular(x, z) for x,z in zip(x_list, dxlist)] # stack gives problem with tree strcuture of jax
+def retract_stiefel(xi:list[np.ndarray], eta:np.ndarray):
+    """
+    Retraction of tangent vectors to stiefel manifold
+
+    args:
+    ---------
+    xi:
+        list of 3n - (n-1) = 2n + 1 operators of the stiefel manifold 
+    eta: 
+        long 1d-array containing the parametrization of all the tangent vectors
+        each of which belongs to the tangent space of each of the `x` in `xi`
+        NOTE: 'parametrizations_from_vector' and 'tangent_from_parametrization' 
+        should be coherent with the parametrization used to create `eta`, 
+        i.e. the parametrization used in `gradient_stiefel_vec` and `riemannian_hessian_vec`.
+    returns:
+    ---------
+        list of operators belonging to the stiefel manifold obtained from:
+        retraction(x[j] + tangent[j]) for each x,tangent coming from xi,eta (respectively)
+
+    """
+    params_list = parametrizations_from_vector(eta, shapes=[op.shape for op in xi]) 
+    # unitaries: project the eta[j] onto the tangent space of the vlist[j].
+    dxlist = [tangent_from_parametrization(x, *params) for x,params in zip(xi, params_list)]
+    return [polar_decomposition_rectangular(x, z) for x,z in zip(xi, dxlist)] # stack gives problem with tree strcuture of jax
 
 def is_isometry_2(x:np.ndarray)->bool:
     "check if `x` belongs to the stiefel manifold"
@@ -310,6 +398,9 @@ def gradient_stiefel(xi, func):
     Compute the riemannian gradient using the euclidean/embedded/constant trace metric
 
     From https://assets.press.princeton.edu/chapters/absil/Absil_Chap3.pdf equation 3.37
+
+    This is equivalent to calling:
+    `gradient_stiefel_general(alpha0=1, alpha1=1)`
     """
     Zi = jax.grad(func)(xi)
     return [project(X, Z)
@@ -320,6 +411,9 @@ def gradient_canonical(xi, func):
     Compute the riemannian gradient using the canonical metric in tangent space. 
     From https://math.mit.edu/~edelman/publications/geometry_of_algorithms.pdf eq.2.53
     FY - YFYTY.
+
+    This is equivalent to calling:
+    `gradient_stiefel_general(alpha0=1, alpha1=1/2)`
     """
     zi = jax.grad(func)(xi)
     return [z - x@z.T@x for x,z in zip(xi, zi)]
@@ -328,14 +422,16 @@ def gradient_stiefel_vec(xi, func, metric='euclidean'):
     "compute the vectorized gradient for all xi"
     # NOTE: changing to store only parametrization here to adhere to trust_region function 
     if metric == 'euclidean':
-        zi = gradient_stiefel(xi, func)
+        alpha0, alpha1 = 1, 1
     elif metric == 'canonical':
-        zi = gradient_canonical(xi, func)
+        alpha0, alpha1 = 1, 1/2
     else:
         raise ValueError(f'{metric} is not a valid metric value')
-    return jnp.vstack([
-        parametrization_from_tangent(X=x, Z=grad, stack=True) 
-    for x, grad in zip(xi, zi)]).reshape(-1)
+    zi = gradient_stiefel_general(xi, func, alpha0=alpha0, alpha1=alpha1)
+    # NOTE: changed from jnp.vstack since now we are concatenating vectors.
+    return jnp.hstack([
+        parametrization_from_tangent(X=x, Z=grad, stack=True, vectorized=True) 
+    for x, grad in zip(xi, zi)])
 
 def riemannian_connection(D_nu, nu, eta, x, alpha0:int=1, alpha1:int=1):
     """
@@ -356,8 +452,6 @@ def riemannian_hessian(x, func, vector=False, metric:str='euclidean'):
     grad_func = lambda xi: gradient_stiefel_general(xi, func, alpha0=alpha0, alpha1=alpha1)
 
     n = len(x)
-    # relaxed this condition
-    # assert n == 3, 'wrong input size'
     x_comps = [get_orthogonal_complement(xi) for xi in x]
     hessian_columns = []
 
@@ -368,28 +462,27 @@ def riemannian_hessian(x, func, vector=False, metric:str='euclidean'):
 
     for i in range(n):
         print('column :',i)
-        dxk_size = x[i].size
+        dxk_size = stiefel_tangent_dof(x[i]) #x[i].size
         if vector:
-            xi_dxk = [np.zeros((op.size, dxk_size), dtype=np.float64) for op in x]
+            xi_dxk = [np.zeros((stiefel_tangent_dof(op), dxk_size), dtype=np.float64) for op in x]
         else:
+            # TODO: see if I need to deprecate this, as I don't think it makes sense anymore without vectorizing it.
             xi_dxk = [np.zeros(op.shape + (dxk_size,), dtype=np.float64) for op in x]
         
         for k in range(dxk_size):
-            # tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else project(X=op, Z=jnp.roll(unit_matrices[l],k)) for l,op in enumerate(x)]
-            # tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else jnp.roll(unit_matrices[l],k) for l,op in enumerate(x)]
+            # see old commits for previous attempts
             tangents = [jnp.zeros_like(op, dtype=np.float64) if l!=i else get_elementary_tangent_direction(k, op) for l, op in enumerate(x)]
 
             grads_eval, jvp_eval = jax.jvp(grad_func, (x,), (tangents,))
 
             for j, element in enumerate(jvp_eval):
-                # we need to project each of them and store in an array that has information about the index k
-                # z = project(x[j],element)
+                # we need to project each of them and store in an array that has information about the index k. before: projection
                 z = riemannian_connection(D_nu=element, nu=grads_eval[j], eta=tangents[j], x=x[j], alpha0=alpha0, alpha1=alpha1)
                 if vector:            
-                    # NOTE: changing to store only parametrization here to adhere to trust_region function 
-                    xi_dxk[j][:,k] +=  parametrization_from_tangent(X=x[j], Z=z, X_comp=x_comps[j], stack=True).reshape(-1)
+                    # NOTE: stores only parametrization here to adhere to trust_region function 
+                    xi_dxk[j][:,k] +=  parametrization_from_tangent(X=x[j], Z=z, X_comp=x_comps[j], stack=True, vectorized=True)
                 else:
-                    xi_dxk[j][:,:,k] += parametrization_from_tangent(X=x[j], Z=z, stack=True)
+                    xi_dxk[j][:,:,k] += parametrization_from_tangent(X=x[j], Z=z, stack=True, vectorized=False)
         hessian_columns.append(xi_dxk)
     return hessian_columns
 
