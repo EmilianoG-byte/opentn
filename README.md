@@ -1,5 +1,14 @@
 # OpenTN [WIP]
 
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" width="650">
+  <img alt="openTN" src="./images/OpenTN.png" width="650">
+</picture>
+
+</div>
+
 Employing Locally Purified Density Operator (LPDO) tensor networks to study open quantum systems under non-local CPTP maps.
 
 Decreasing approximation errors from the trotterization of CPTP maps on the kraus dimensions. Using Riemannian optimization on Sitefel Manifold.
