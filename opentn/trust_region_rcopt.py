@@ -52,31 +52,35 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, sav
 
     if gfunc is not None:
         g_iter.append(gfunc(x))
-    for k in range(niter):
-        print(f'iteration: {k}')
-
-        grad = gradfunc(x)
-        hess = hessfunc(x)
-        eta, on_boundary = truncated_cg(grad, hess, radius, **tcg_kwargs)
-        x_next = retract(x, eta)
-        fx = f(x)
-        f_iter.append(fx)
-        # Eq. (7.7)
-        rho = (f(x_next) - fx) / (np.dot(grad, eta) + 0.5 * np.dot(eta, hess @ eta))
-        if rho < 0.25:
-            # reduce radius
-            radius *= 0.25
-        elif rho > 0.75 and on_boundary:
-            # enlarge radius
-            radius = min(2 * radius, maxradius)
-        print('radius', radius)
-        if rho > rho_trust:
-            x = x_next
-        if gfunc is not None:
-            g_iter.append(gfunc(x))
-        if save_x: # saving it here so I get the updated one.
-            x_iter.append(x)
-    return x_iter, f_iter, g_iter, radius # x_iter will have 1 more element f_iter
+    try:
+        for k in range(niter):
+            print(f'iteration: {k}')
+            grad = gradfunc(x)
+            hess = hessfunc(x)
+            eta, on_boundary = truncated_cg(grad, hess, radius, **tcg_kwargs)
+            x_next = retract(x, eta)
+            fx = f(x)
+            f_iter.append(fx)
+            print(f'cost function: {fx}')
+            # Eq. (7.7)
+            rho = (f(x_next) - fx) / (np.dot(grad, eta) + 0.5 * np.dot(eta, hess @ eta))
+            if rho < 0.25:
+                # reduce radius
+                radius *= 0.25
+            elif rho > 0.75 and on_boundary:
+                # enlarge radius
+                radius = min(2 * radius, maxradius)
+            print('radius', radius)
+            if rho > rho_trust:
+                x = x_next
+            if gfunc is not None:
+                g_iter.append(gfunc(x))
+            if save_x: # saving it here so I get the updated one.
+                x_iter.append(x)
+        return x_iter, f_iter, radius # x_iter will have 1 more element f_iter
+    except KeyboardInterrupt:
+        print(f"optimization stopped before finishing at iteration:{k}")
+        return x_iter, f_iter, radius
 
 
 def truncated_cg(grad, hess, radius, **kwargs):
