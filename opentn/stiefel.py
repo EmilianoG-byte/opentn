@@ -164,7 +164,7 @@ def get_elementary_tangent_direction(k:int, x:np.ndarray):
         # arbitrary. Need to shift down the k to be in [0, (n-p)*p] not in [p**2, p**2 + (n-p)*p]
         return get_elementary_arbitrary(k - antisymmetric_dof(x), x)
 
-def get_orthogonal_complement(X:np.ndarray):
+def get_orthogonal_complement(x:np.ndarray):
     """
     Get the orthogonal complement matrix of X such that
 
@@ -172,9 +172,12 @@ def get_orthogonal_complement(X:np.ndarray):
 
     see 'notation' in https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=984753 lemma 8
     """
-    n, p = X.shape
+    n, p = x.shape
     # TODO: add back the conj
-    P_x = X @ X.T 
+    if n == p:
+        # unitary case
+        return np.zeros_like(x)
+    P_x = x @ x.T 
     P_x_comp = np.eye(n) - P_x
     return factorize_psd_truncated(P_x_comp, chi_max=n-p, eps=1e-15) # adding eps=1e-15 to make sure rank is the predominant factor to keep singular values
 
@@ -238,11 +241,25 @@ def parametrizations_from_vector(param_vec:np.ndarray, shapes:list[tuple[int]])-
         params.append((upper_triangular_to_antisymmetric(A_upper, p=p), unvectorize(B_vec, n-p, p)))
     return params
 
-def parametrization_from_tangent(X:np.ndarray, Z:np.ndarray, X_comp:np.ndarray = None ,stack:bool=True, vectorized:bool=True):
+def parametrization_from_tangent_square(x:np.ndarray, z:np.ndarray, vectorized:bool=True):
     """
-    Get the A and B matrices that parametrize the Z matrix of the tangent space of stiefel manifold at X
+    parametrization for tangent space of square stiefel manifold (unitary manifold) at x
     
-    Z = X @ A + X_comp @ B
+    Z = x @ A 
+    """
+    A = get_antisymmetric(x, z)
+    
+    if vectorized:
+        A_upper = square_to_upper_triangular(A)
+        return A_upper
+    else:
+        return A
+
+def parametrization_from_tangent(x:np.ndarray, z:np.ndarray, x_comp:np.ndarray = None ,stack:bool=True, vectorized:bool=True):
+    """
+    Get the A and B matrices that parametrize the Z matrix of the tangent space of stiefel manifold at x
+    
+    Z = x @ A + x_comp @ B
     
     with X_comp the orthogonal complement of X.
 
@@ -254,28 +271,35 @@ def parametrization_from_tangent(X:np.ndarray, Z:np.ndarray, X_comp:np.ndarray =
 
     Added `vectorized` flag to keep it compatible with the non-vectorized hessian implementation
     """
-    if X_comp is None:
-        X_comp = get_orthogonal_complement(X)
-
-    A = get_antisymmetric(X, Z)
-    B = get_arbitrary(X_comp=X_comp, Z=Z, X=X)
-    
-    if stack:
-        if vectorized:
-            A_upper = square_to_upper_triangular(A) # ndim = 1
-            # how to stack different elements: https://stackoverflow.com/questions/33356442/when-should-i-use-hstack-vstack-vs-append-vs-concatenate-vs-column-stack
-            return jnp.hstack([A_upper,B.reshape(-1)], dtype=np.float64)
-        else:
-            return jnp.vstack([A, B], dtype=np.float64)
+    n, p = x.shape
+    if n==p:
+        return parametrization_from_tangent_square(x, z, vectorized)
     else:
-        return A, B
+        if x_comp is None:
+            x_comp = get_orthogonal_complement(x)
+
+        A = get_antisymmetric(x, z)
+        B = get_arbitrary(X_comp=x_comp, Z=z, X=x)
+        
+        if stack:
+            if vectorized:
+                A_upper = square_to_upper_triangular(A) # ndim = 1
+                # how to stack different elements: https://stackoverflow.com/questions/33356442/when-should-i-use-hstack-vstack-vs-append-vs-concatenate-vs-column-stack
+                return jnp.hstack([A_upper,B.reshape(-1)], dtype=np.float64)
+            else:
+                return jnp.vstack([A, B], dtype=np.float64)
+        else:
+            return A, B
     
 def tangent_from_parametrization(X:np.ndarray, A:np.ndarray, B:np.ndarray)->np.ndarray:
     "Get the tangent vector corresponding to the parametrization A (skew symmetric) and B (arbitrary)"
     n,p = X.shape
     assert A.shape == (p,p), "Wrong shape for A"
     assert B.shape == (n-p, p), "Wrong shape for B"
-    return X @ A + get_orthogonal_complement(X) @ B
+    if n!=p:
+        return X @ A + get_orthogonal_complement(X) @ B
+    else:
+        return X @ A
 
 def polar_decomposition_stiefel(X:np.ndarray, Z:np.ndarray):
     """
@@ -430,7 +454,7 @@ def gradient_stiefel_vec(xi, func, metric='euclidean'):
     zi = gradient_stiefel_general(xi, func, alpha0=alpha0, alpha1=alpha1)
     # NOTE: changed from jnp.vstack since now we are concatenating vectors.
     return jnp.hstack([
-        parametrization_from_tangent(X=x, Z=grad, stack=True, vectorized=True) 
+        parametrization_from_tangent(x=x, z=grad, stack=True, vectorized=True) 
     for x, grad in zip(xi, zi)])
 
 def riemannian_connection(D_nu, nu, eta, x, alpha0:int=1, alpha1:int=1):
@@ -479,10 +503,10 @@ def riemannian_hessian(x, func, vector=False, metric:str='euclidean'):
                 # we need to project each of them and store in an array that has information about the index k. before: projection
                 z = riemannian_connection(D_nu=element, nu=grads_eval[j], eta=tangents[j], x=x[j], alpha0=alpha0, alpha1=alpha1)
                 if vector:            
-                    # NOTE: stores only parametrization here to adhere to trust_region function 
-                    xi_dxk[j][:,k] +=  parametrization_from_tangent(X=x[j], Z=z, X_comp=x_comps[j], stack=True, vectorized=True)
+                    # NOTE: stores only parametrization here to adhere to trust_region function
+                    xi_dxk[j][:,k] += parametrization_from_tangent(x=x[j], z=z, x_comp=x_comps[j], stack=True, vectorized=True)
                 else:
-                    xi_dxk[j][:,:,k] += parametrization_from_tangent(X=x[j], Z=z, stack=True, vectorized=False)
+                    xi_dxk[j][:,:,k] += parametrization_from_tangent(x=x[j], z=z, stack=True, vectorized=False)
         hessian_columns.append(xi_dxk)
     return hessian_columns
 
