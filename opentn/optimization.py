@@ -7,11 +7,34 @@ import jax.numpy as jnp
 import numpy as np
 from typing import Callable
 from jax import jit
-from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition, ortho2choi, compose_superops_list, unfactorize_psd, tensor_to_matrix, ortho2super, create_kitaev_liouvillians, lindbladian2super, exp_operator_dt, super2ortho, get_kitaev_nn_linbladian
+from opentn.transformations import vectorize, choi2super, create_supertensored_from_local, convert_supertensored2liouvillianfull, choi_composition, ortho2choi, compose_superops_list, unfactorize_psd, tensor_to_matrix, ortho2super, create_kitaev_liouvillians, lindbladian2super, exp_operator_dt, super2ortho, get_kitaev_nn_linbladian, create_2local_liouvillians, super2choi, choi2ortho, factorize_psd_truncated
 import cvxpy as cvx
 
 from jax import config
 config.update("jax_enable_x64", True)
+
+def eval_numerical_gradient(f:callable, x:np.ndarray, h=1e-5):
+    """
+    Approximate the numeric gradient of a function via
+    the difference quotient (f(x + h) - f(x - h)) / (2 h).
+    """
+    grad = np.zeros_like(x)
+
+    # iterate over all indexes in x
+    it = np.nditer(x, flags=['multi_index'], op_flags=['readwrite'])
+    while not it.finished:
+        i = it.multi_index
+        xi_ref = x[i]
+        x[i] = xi_ref + h
+        fpos = f(x)         # evaluate f(x + h)
+        x[i] = xi_ref - h
+        fneg = f(x)         # evaluate f(x - h)
+        x[i] = xi_ref       # restore
+        # compute the partial derivative via centered difference quotient
+        grad[i] = (fpos - fneg) / (2 * h)
+        it.iternext() # step to next dimension
+
+    return grad
 
 
 def small2zero(op:np.array, tol:float=1e-8):
@@ -31,9 +54,10 @@ def update(old_params:list, grads:list, rate:float):
     return old_params - rate*grads
 
 def frobenius_norm(A:np.ndarray,B:np.ndarray, squared:bool=False):
-    exp = 1
     if squared:
         exp = 2
+    else:
+        exp = 1
     return jnp.linalg.norm(A-B, ord='fro')**exp
 
 def cosine_similarity(A:np.ndarray,B:np.ndarray):
@@ -136,21 +160,30 @@ def compute_loss(xi:np.ndarray, loss_fn, model, exact:np.ndarray, **kwargs):
 
 def get_kitaev_trotter_local_ansatz(gamma:float, tau:int, n:int)->list[np.ndarray]:
     """
-    List of stiefel operators used in the second-order trotter approximation 
+    List of super operators used in the second-order trotter approximation 
     of the dissipative evolution corresponding to the kitaev wire noise model
     using `n` time steps
+    """
+   
+    Lnn = get_kitaev_nn_linbladian(gamma)
+    return get_general_trotter_local_ansatz(lindbladians=[Lnn], tau=tau, n=n)
+
+
+def get_general_trotter_local_ansatz(lindbladians:list[np.ndarray], tau:int, n:int) -> list[np.ndarray]:
+    """
+    List of superoperators created from a list of lindbladians used in the 
+    second-order trotter approximation using n time steps
 
     `len()` of output is the number of layers in trotterization:= 3n - (n-1) = 2n + 1
     """
+    assert isinstance(lindbladians, list), "lindbladians should be a list of matrices"
     time_step = tau/n
-    Lnn = get_kitaev_nn_linbladian(gamma)
-    superop_nn = lindbladian2super(Li=[Lnn])
-
+    superop_nn = lindbladian2super(Li=lindbladians)
     exp_nn_half_step = exp_operator_dt(superop_nn, tau=time_step/2, backend='jax')
     exp_nn_full_step = exp_operator_dt(superop_nn, tau=time_step, backend='jax')
     return [exp_nn_half_step] + [exp_nn_full_step]*(2*n-1) + [exp_nn_half_step]
 
-def compute_kitaev_approximation_error(d:int, N:int, gamma:float, tau:int, n:int, xs:list[np.ndarray]=None)->float:
+def compute_kitaev_approximation_error(d:int, N:int, gamma:float, tau:int, n:int)->float:
     """
     Compute the approximation error in the dissipative evolution of the kitaev wire noise model by trotterization.
 
@@ -176,15 +209,19 @@ def compute_kitaev_approximation_error(d:int, N:int, gamma:float, tau:int, n:int
     ---------
         approximation error
     """
-    Lvec, *_ = create_kitaev_liouvillians(N=N, d=d, gamma=gamma, pbc=True)
+    return compute_trotter_approximation_error(d=d, N=N, tau=tau, n=n, Li=[get_kitaev_nn_linbladian(gamma)])
 
-    if not xs:
-        xs = get_kitaev_trotter_local_ansatz(gamma, tau, n)
+def compute_trotter_approximation_error(d:int, N:int, tau:int, n:int, Li:list[np.ndarray]) ->float:
+
+    Lvec, *_ = create_2local_liouvillians(Li=Li, N=N, d=d, pbc=True)
+    chois = [super2choi(x.real) for x in get_general_trotter_local_ansatz(lindbladians=Li, tau=tau, n=n)]
+    ranks = [np.linalg.matrix_rank(choi) for choi in chois]
+    assert len(set(ranks)) == 1, "not all ranks are the same"
+    rank = ranks[0]
 
     exp_Lvec = exp_operator_dt(Lvec, tau=tau, backend='jax')
+    xs_stiefel_n_layers = [choi2ortho(factorize_psd_truncated(choi, chi_max=rank)) for choi in chois]
     f_stiefel_n_layers = lambda xi: frobenius_norm(model_stiefel_local(xi, N=N, d=d), exp_Lvec)
-    xs_stiefel_n_layers = [super2ortho(x.real, rank=2) for x in xs]
-
     return f_stiefel_n_layers(xs_stiefel_n_layers)
 
 def gds(fn:Callable, x0:list, exact:np.ndarray, rate:float = 0.01, iter:int = 10, loss_fn=None, model=None, show_cost:bool=True, store_all:bool=True, **kwargs) -> tuple[list, list, list]:

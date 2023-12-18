@@ -12,7 +12,7 @@ import cvxpy as cp
 from scipy import sparse
 from opentn.states.qubits import get_ladder_operator
 from itertools import chain
-
+from typing import Union
 from jax import config
 config.update("jax_enable_x64", True)
 
@@ -119,7 +119,7 @@ def choi2super(choi:np.ndarray, dim:int=None)->np.ndarray:
     superop = superop.swapaxes(1, 2).reshape([dim ** 2, dim ** 2]) #see graphical proof
     return superop
 
-def choi2kraus(choi:np.ndarray, tol:float = 1e-9)->list[np.ndarray]:
+def choi2kraus(choi:np.ndarray, tol:float = 1e-9, rank:int=None,method:str='svd')->list[np.ndarray]:
     """
     Convert a choi matrix to its kraus representation
 
@@ -138,10 +138,16 @@ def choi2kraus(choi:np.ndarray, tol:float = 1e-9)->list[np.ndarray]:
     ---------
         List of kraus operators corrresponding to the quantum channel
     """
-    eigvals, eigvecs = np.linalg.eigh(choi)
-    # print([eig for eig in eigvals if abs(eig)>tol])
-    kraus_list = [np.sqrt(eigval) * unvectorize(vec) for eigval, vec in
-            zip(eigvals, eigvecs.T) if abs(eigval) > tol]
+    if method == 'svd':
+        if not rank:
+            rank = np.linalg.matrix_rank(choi)
+        kraus_matrix = factorize_psd_truncated(choi, chi_max=rank, eps=tol)
+        kraus_list = [unvectorize(kraus_vec) for kraus_vec in kraus_matrix.T]
+    elif method == 'eigenvals':
+        print("using the eigenvalue method is less stable. Using svd is recommended")
+        eigvals, eigvecs = np.linalg.eigh(choi)
+        kraus_list = [np.sqrt(eigval) * unvectorize(vec) for eigval, vec in
+                zip(eigvals, eigvecs.T) if abs(eigval) > tol]
     return kraus_list
 
 def kraus2choi(kraus_list:list[np.ndarray])->np.ndarray:
@@ -292,13 +298,21 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
             # see: https://stackoverflow.com/questions/15933741/how-do-i-catch-a-numpy-warning-like-its-an-exception-not-just-for-testing
     return X
 
-def create_2local_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:bool=False):
-    "create the liouvillians from a local two-sites lindbladian operator"
+def create_2local_liouvillians(Li:Union[np.ndarray, list], N:int, d:int, pbc:bool=False):
+    Lvec_odd_full = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
+    Lvec_even_full = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)   
 
-    # TODO: once I check this works correctly, Lvec should be created as the sum of Lodd and Leven.
-    Lvec = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
-    for i in range(0, N-1):
-        Lvec += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
+    if not isinstance(Li, list):
+        Li = [Li] 
+
+    for L in Li:
+        _, Lvec_odd, Lvec_even = local_lindbladian_to_full_liouvillians(Lnn=L, N=N, d=d, pbc=pbc)    
+        Lvec_odd_full += Lvec_odd
+        Lvec_even_full += Lvec_even
+    return Lvec_odd_full + Lvec_even_full, Lvec_odd_full, Lvec_even_full
+
+def local_lindbladian_to_full_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:bool=False):
+    "create the liouvillians from a local two-sites lindbladian operator"
 
     Lvec_odd = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
     for i in range(0, N, 2):
@@ -309,12 +323,9 @@ def create_2local_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:bool=False):
         Lvec_even += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
 
     if pbc:
-        Lvec_pbc = create_pbc_liouvillian(Lnn=Lnn, N=N, d=d)
-        Lvec_even += Lvec_pbc
-        Lvec += Lvec_pbc
+        Lvec_even += create_pbc_liouvillian(Lnn=Lnn, N=N, d=d)
         
-    assert jnp.allclose(Lvec, Lvec_even + Lvec_odd)
-    return Lvec, Lvec_odd, Lvec_even, Lnn
+    return Lvec_even + Lvec_odd, Lvec_odd, Lvec_even
 
 def create_pbc_liouvillian(Lnn:np.ndarray, N:int, d:int):
     "create 2local liouvillian "
@@ -335,7 +346,7 @@ def create_kitaev_liouvillians(N:int, d:int, gamma:float, pbc:bool=False):
     "create the liouvillians corresponding to the kitaev wire noise model"
     # TODO: Lnn should no be returned in create_2local_liouvillians
     Lnn = get_kitaev_nn_linbladian(gamma)
-    Lvec, Lvec_odd, Lvec_even, Lnn = create_2local_liouvillians(Lnn, N, d, pbc)
+    Lvec, Lvec_odd, Lvec_even = create_2local_liouvillians(Lnn, N, d, pbc)
     return Lvec, Lvec_odd, Lvec_even, Lnn
 
 

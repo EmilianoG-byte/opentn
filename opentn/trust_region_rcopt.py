@@ -79,7 +79,7 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, sav
                 x_iter.append(x)
         return x_iter, f_iter, radius # x_iter will have 1 more element f_iter
     except KeyboardInterrupt:
-        print(f"optimization stopped before finishing at iteration:{k}")
+        print(f"optimization stopped prematurely at iteration: {k}")
         return x_iter, f_iter, radius
 
 
