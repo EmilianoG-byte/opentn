@@ -1,6 +1,10 @@
 """
 A module containing the transformations between Open Quantum Systems representations and the
 corresponding helping methods
+
+
+Some of these transformations were inspired by forest benchmarking:
+https://github.com/rigetti/forest-benchmarking/blob/4c2c3bf94af4926b61e9072ca71b914972de338c/forest/benchmarking/operator_tools/
 """
 
 import scipy
@@ -157,11 +161,23 @@ def kraus2choi(kraus_list:list[np.ndarray])->np.ndarray:
     row-wise vectorization assumed.
     Choi = \sum_k |Ek>> <<Ek|
     """
-    if isinstance(kraus_list, np.ndarray):  # handle input of single kraus op
-        if len(kraus_list[0].shape) < 2:
-            kraus_list = [kraus_list]
+    if not isinstance(kraus_list, list):  # handle input of single kraus op
+        kraus_list = [kraus_list]
 
     return sum([vectorize(Ek) @ vectorize(Ek).conj().T for Ek in kraus_list])
+
+def kraus2superop(kraus_list:list[np.ndarray])->np.ndarray:
+    """
+    Convert a list of kraus operators into its superoperator representation
+    """
+    if not isinstance(kraus_list, list):  # handle input of single kraus op
+        kraus_list = [kraus_list]
+    rows, cols = kraus_list[0].shape
+    superop = np.zeros(shape=(rows**2, cols**2), dtype=complex)
+    for kraus in kraus_list:
+        superop += np.kron(kraus, kraus.conj())
+    return superop
+
 
 
 def lindbladian2kraus(H:np.ndarray = None, Li:list[np.ndarray] = [], tau:int = 1, tol:float = 1e-9)->list[np.ndarray]:
@@ -312,7 +328,11 @@ def create_2local_liouvillians(Li:Union[np.ndarray, list], N:int, d:int, pbc:boo
     return Lvec_odd_full + Lvec_even_full, Lvec_odd_full, Lvec_even_full
 
 def local_lindbladian_to_full_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:bool=False):
-    "create the liouvillians from a local two-sites lindbladian operator"
+    """
+    Create the liouvillians from a local two-sites lindbladian operator
+    
+    Returns: total, odd, even liouvillians (superoperators)
+    """
 
     Lvec_odd = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
     for i in range(0, N, 2):

@@ -12,6 +12,14 @@ from opentn.transformations import factorize_psd_truncated, vec2list, unvectoriz
 
 from scipy.linalg import fractional_matrix_power, polar
 
+def random_psd(dim:int, normalized:bool=True):
+    "generate a random psd matrix with trace 1 if normalized =  True"
+    psd_sqrt = np.random.rand(dim, dim)
+    psd = psd_sqrt @ psd_sqrt.T.conj()
+    if normalized:
+        psd /= np.trace(psd)
+    return psd
+
 def project(X:np.ndarray, Z:np.ndarray):
     """
     Project Z matrix onto the tangent space of matrix X in Stiefel manifold
