@@ -176,7 +176,8 @@ def get_general_trotter_local_ansatz(lindbladians:list[np.ndarray], tau:int, n:i
 
     `len()` of output is the number of layers in trotterization:= 3n - (n-1) = 2n + 1
     """
-    assert isinstance(lindbladians, list), "lindbladians should be a list of matrices"
+    if not isinstance(lindbladians, list):
+        lindbladians = [lindbladians]
     time_step = tau/n
     superop_nn = lindbladian2super(Li=lindbladians)
     exp_nn_half_step = exp_operator_dt(superop_nn, tau=time_step/2, backend='jax')
