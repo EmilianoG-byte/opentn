@@ -2,7 +2,7 @@ import numpy as np
 import warnings
 
 
-def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, save_x=False ,**kwargs):
+def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, save_x=False, check_convergence:bool=False, **kwargs):
     """
     Optimization via the Riemannian trust-region (RTR) algorithm.
 
@@ -38,6 +38,7 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, sav
     maxradius   = kwargs.get("maxradius",   0.1)
     niter       = kwargs.get("niter", 20)
     gfunc       = kwargs.get("gfunc", None)
+    tol         = kwargs.get("tol", 1e-10)
     # transfer keyword arguments for truncated_cg
     tcg_kwargs = {}
     for key in ["maxiter", "abstol", "reltol"]:
@@ -77,9 +78,13 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, sav
                 g_iter.append(gfunc(x))
             if save_x: # saving it here so I get the updated one.
                 x_iter.append(x)
+            if check_convergence:
+                if np.abs(f_iter[-1]-f_iter[-2])/f_iter[-1] <= tol:
+                    print(f"optimization converged prematurely at iteration: {k}")
+                    break
         return x_iter, f_iter, radius # x_iter will have 1 more element f_iter
     except KeyboardInterrupt:
-        print(f"optimization stopped prematurely at iteration: {k}")
+        print(f"optimization was stopped prematurely at iteration: {k}")
         return x_iter, f_iter, radius
 
 
