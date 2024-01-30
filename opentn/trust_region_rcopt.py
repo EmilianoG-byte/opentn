@@ -76,7 +76,7 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, sav
                 x = x_next
             if gfunc is not None:
                 g_iter.append(gfunc(x))
-            if save_x: # saving it here so I get the updated one.
+            if save_x or k == (niter - 1): # if save = False, this will save only the last iteration
                 x_iter.append(x)
             if check_convergence:
                 if np.abs(f_iter[-1]-f_iter[-2])/f_iter[-1] <= tol:
