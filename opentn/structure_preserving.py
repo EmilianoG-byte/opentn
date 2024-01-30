@@ -5,11 +5,12 @@ algorithms introduced in https://arxiv.org/abs/2103.01194
 
 import numpy as np
 import jax.numpy as jnp
-from opentn.transformations import op2fullspace, permute_operator_pbc, kraus2superop, exp_operator_dt
+from opentn.transformations import op2fullspace, permute_operator_pbc, kraus2superop, exp_operator_dt, vectorize, unvectorize
+from opentn.stiefel import random_psd
 from opentn.optimization import frobenius_norm
 from typing import Union, Optional
 from itertools import combinations
-from math import factorial, ceil
+from math import factorial, ceil, log
 from jax import config
 config.update("jax_enable_x64", True)
 
@@ -22,7 +23,13 @@ def effective_hamiltonian(lindbladians:Union[np.ndarray, list],  N:int, d:int, p
     For now we assume that no hamiltonian is used
     # TODO: include hamiltonian terms
     """
-    assert N >= 4, "try a system larger than N = 4"
+    num_sites = int(log(lindbladians[0].shape[0], d)) # assume all lindbladians are same shape
+
+    assert num_sites <= N, f"the numbert of sites on the lindbladians: {num_sites} should be smaller or equal than N: {N} "
+
+    if N == num_sites or N == 1: # using pbc for a single site would not make sense
+        pbc = False
+
     if not isinstance(lindbladians, list):
         lindbladians = [lindbladians]
 
@@ -31,13 +38,18 @@ def effective_hamiltonian(lindbladians:Union[np.ndarray, list],  N:int, d:int, p
     for lindbladian in lindbladians:
 
         for i in range(0, N-1):
-            lindbladian_full = op2fullspace(op=lindbladian, i=i, N=N, num_sites=2)
+            lindbladian_full = op2fullspace(op=lindbladian, i=i, N=N, num_sites=num_sites)
             h_eff += lindbladian_full.conj().T @ lindbladian_full / 2j
 
         if pbc: # PBC
-            lindbladian_full = op2fullspace(op=lindbladian, i=N-2, N=N, num_sites=2)
+            lindbladian_full = op2fullspace(op=lindbladian, i=N-2, N=N, num_sites=num_sites)
             lindbladian_full = permute_operator_pbc(lindbladian_full, N=N, d=d)
             h_eff += lindbladian_full.conj().T @ lindbladian_full / 2j
+
+        if N == 1:
+            # this is needed because the i loop would not enter with N = 1
+            h_eff += lindbladian.conj().T @ lindbladian / 2j
+
     return h_eff
 
 
@@ -50,19 +62,28 @@ def kraus_lindbladians_to_superop(Ek:list[np.ndarray], N:int, d:int, pbc:bool=Tr
 
     See L_l(rho) in equation 6.b of https://arxiv.org/abs/2103.01194.
     """
-    assert N >= 4, "try a larger system"
+    num_sites = int(log(Ek[0].shape[0], d)) # assume all lindbladians are same shape
+
+    assert num_sites <= N, f"the numbert of sites on the lindbladians: {num_sites} should be smaller or equal than N: {N} "
+
+    if N == num_sites or N == 1: # using pbc for a single site would not make sense
+        pbc = False
 
     if not isinstance(Ek, list):
         Ek = [Ek]
     superop = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
 
     for i in range(0, N-1):
-        Ek_full_size = [op2fullspace(op=op, i=i, N=N, num_sites=2) for op in Ek]
+        Ek_full_size = [op2fullspace(op=op, i=i, N=N, num_sites=num_sites) for op in Ek]
         superop += kraus2superop(kraus_list=Ek_full_size)
 
     if pbc:
-        Ek_full_size = [permute_operator_pbc(op2fullspace(op=op, i=N-2, N=N, num_sites=2), N=N, d=d) for op in Ek]
+        Ek_full_size = [permute_operator_pbc(op2fullspace(op=op, i=N-2, N=N, num_sites=num_sites), N=N, d=d) for op in Ek]
         superop += kraus2superop(kraus_list=Ek_full_size)
+
+    if N == 1:
+        # this is needed because the i loop would not enter with N = 1
+        superop += kraus2superop(kraus_list=Ek)
     return superop
 
 def m_order_l_operator(m:int, Ek:list[np.ndarray], N:int, d:int):
@@ -110,13 +131,13 @@ def generate_rj(Nm:int, dt:float):
     return [(j - 0.5) * (dt/Nm) for j in range(1, Nm + 1)]
 
 
-def m_order_j_operator(m:int, t:float, s:float, lindbladians:list[np.ndarray], N:int, d:int):
+def m_order_j_operator(m:int, t:float, s:float, lindbladians:list[np.ndarray], N:int, d:int, pbc:bool=True):
     """
     m order J_m(t,s) CP superoperator
 
     See equation 11 of https://arxiv.org/abs/2103.01194.
     """
-    J = -1j * effective_hamiltonian(lindbladians=lindbladians, N=N, d=d)
+    J = -1j * effective_hamiltonian(lindbladians=lindbladians, N=N, d=d, pbc=pbc)
     taylor_m = m_order_taylor(m=m, op=J, delta=t-s)
     return kraus2superop(taylor_m)
 
@@ -148,18 +169,22 @@ def identity_full(N:int=None, d:int=None, size:Optional[int]=None)->np.ndarray:
     return jnp.identity(n=size)
 
 
-def unnormalized_scheme(lindbladians:Union[np.ndarray, list], N:int, d:int, dt:float, order:int=1, quadrature:str="trapezoidal"):
+def unnormalized_scheme(lindbladians:Union[np.ndarray, list], N:int, d:int, dt:float, order:int=1, quadrature:str="trapezoidal", verbose:bool=False, pbc:bool=True):
     """
     Superoperator corresponding to a list of lindbladians following the `order` of the scheme.
 
     See equations 15a, 15b, 15c of https://arxiv.org/abs/2103.01194.
     The lindbladians are assumed to be acting locally on two sites
     """
-    h_eff = effective_hamiltonian(lindbladians=lindbladians, N=N, d=d)
-    l_superop = kraus_lindbladians_to_superop(Ek=lindbladians, N=N, d=d)
+
+    if verbose:
+        print(f'currently using dt={dt}, M={order}')
+
+    h_eff = effective_hamiltonian(lindbladians=lindbladians, N=N, d=d, pbc=pbc)
+    l_superop = kraus_lindbladians_to_superop(Ek=lindbladians, N=N, d=d, pbc=pbc)
     identity = identity_full(N=N, d=d)
 
-    superop = m_order_j_operator(m=order, t=dt, s=0, lindbladians=lindbladians, N=N, d=d)
+    superop = m_order_j_operator(m=order, t=dt, s=0, lindbladians=lindbladians, N=N, d=d, pbc=pbc)
     superop += m_order_l_full_term(m=order, dt=dt, Ek=lindbladians, N=N, d=d)
 
     if order == 1:
@@ -234,9 +259,14 @@ def generate_rj_with_multiplicity(rj_list:list[float], ks:list[int]):
     generate a list of rj's taking into account their multiplicity given by the ks indices
 
     See appendix A
+
+    # Example usage:
+    rj_list = [1, 2, 3]
+    ks = [1, 2, 3]
+    >> Expanded rj list: [1, 2, 2, 3, 3, 3]
     """
     differences = generate_differences([0] + ks)
-    assert len(differences) == len(rj_list), "something went wrong, check lengths of input arrays"
+    assert len(differences) == len(rj_list), f"something went wrong. len(differences) = {len(differences)} != len(rj_list) = {len(rj_list)}"
     rj_expanded = []
     for rj, multiplicity in zip(rj_list, differences):
         rj_expanded.extend([rj] * multiplicity)
@@ -253,6 +283,9 @@ def generate_prefactor(dt:float, Nm:int, m:int, ks:list[int]):
         denominator *= factorial(difference)
     return (dt/Nm)**m / denominator
 
+
+
+
 def composition(superop:np.ndarray, n:int)->np.ndarray:
     "composition of a superoperator repeated `n` times"
     superop_tot = superop
@@ -260,10 +293,57 @@ def composition(superop:np.ndarray, n:int)->np.ndarray:
         superop_tot = superop @ superop_tot
     return superop_tot
 
-def unnormalized_scheme_error(Lvec, Lnn, N, d, tau, n, order=2, quadrature='midpoint', verbose=False):
+def unnormalized_scheme_error(Lvec, lindbladians, N, d, tau, n, order=2, quadrature='midpoint', verbose=False):
     "get the error for the unnormalized structure preserving scheme"
     if verbose:
         print(f'currently using tau={tau}, n={n}, M={order}')
-    superop_unnormalized = unnormalized_scheme(lindbladians=[Lnn], N=N, d=d, dt=tau/n, order=order, quadrature=quadrature)
+    superop_unnormalized = unnormalized_scheme(lindbladians=lindbladians, N=N, d=d, dt=tau/n, order=order, quadrature=quadrature)
     exp_Lvec = exp_operator_dt(op=Lvec, tau=tau)
     return frobenius_norm(composition(superop_unnormalized, n), exp_Lvec)
+
+def random_psd_error(superop_exact:np.ndarray, superops_error:list[np.ndarray], iterations:int=500, normalize:bool=True, verbose:bool=False):
+    """
+    Calculate an array of average errors when applying each operator in `superops_error` to a random psd operator
+
+    The average is taken over `iterations`, and the error is calculated wrt to `superop_exact` 
+    """
+    num_methods = len(superops_error)
+    errors = np.zeros(shape=(iterations, num_methods)) 
+    # create random instance:
+    rows, cols = superop_exact.shape
+    assert rows == cols, "this superop should be a square matrix" # Generalize this?
+
+    for it in range(iterations):
+        # sqrt since the superoperator dimensions are the original x conjugated
+        rnd_psd = random_psd(dim=int(np.sqrt(rows)))
+        rnd_psd_vec = vectorize(rnd_psd)
+        # reference one
+        vec_exact = superop_exact @ rnd_psd_vec
+        
+        for j, superop in enumerate(superops_error):
+            # apply the superoperators from each scheme
+            vec_scheme = superop @ rnd_psd_vec
+            # normalize if necessary
+            trace = np.trace(unvectorize(vec_scheme))
+            if normalize:
+                if verbose:
+                    print('method no.: ', j)
+                    print('unnormalized trace: ', trace)
+                vec_scheme = vec_scheme/trace
+            # save error of this iteraiton and operator
+            errors[it,j] = frobenius_norm(unvectorize(vec_scheme), unvectorize(vec_exact))
+
+    return np.mean(errors, axis=0)
+
+def compute_trace_superop(superop:np.ndarray, iterations:int=100):
+    """
+    Compute the trace of superop @ rnd_psd (unvectorized) and average it over `iterations`
+    """
+    rows, cols = superop.shape
+    trace = 0
+    for it in range(iterations):
+        rnd_psd = random_psd(dim=int(np.sqrt(rows)))
+        rnd_psd_vec = vectorize(rnd_psd)
+        vec_final = superop @ rnd_psd_vec
+        trace += np.trace(unvectorize(vec_final)).real
+    return trace/iterations

@@ -17,6 +17,7 @@ from scipy import sparse
 from opentn.states.qubits import get_ladder_operator
 from itertools import chain
 from typing import Union
+from math import log
 from jax import config
 config.update("jax_enable_x64", True)
 
@@ -334,13 +335,20 @@ def local_lindbladian_to_full_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:boo
     Returns: total, odd, even liouvillians (superoperators)
     """
 
+    num_sites = int(log(Lnn.shape[0], d)) # assume all lindbladians are same shape
+
+    assert num_sites <= N, f"the numbert of sites on the lindbladians: {num_sites} should be smaller or equal than N: {N} "
+
+    if N == num_sites or N == 1: # using pbc for a single site would not make sense
+        pbc = False
+
     Lvec_odd = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
     for i in range(0, N, 2):
-        Lvec_odd += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
+        Lvec_odd += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=num_sites)
 
     Lvec_even = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
     for i in range(1, N-1, 2):
-        Lvec_even += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=2)
+        Lvec_even += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=num_sites)
 
     if pbc:
         Lvec_even += create_pbc_liouvillian(Lnn=Lnn, N=N, d=d)
