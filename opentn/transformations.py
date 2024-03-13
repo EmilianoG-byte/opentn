@@ -57,13 +57,13 @@ def lindbladian2super(H:np.ndarray = None, Li:list[np.ndarray] = [], dim:int=Non
             dim = H.shape[0]
         elif Li:
             dim = Li[0].shape[0]
-    super = np.zeros(shape=(dim ** 2, dim ** 2),dtype=complex)
+    superop = np.zeros(shape=(dim ** 2, dim ** 2),dtype=complex)
     if H:
-         super += vectorize_hamiltonian(H=H, dim=dim)
+         superop += vectorize_hamiltonian(H=H, dim=dim)
     for L in Li:
-        super += vectorize_dissipative(L=L, dim=dim)
+        superop += vectorize_dissipative(L=L, dim=dim)
 
-    return super
+    return superop
 
 def super2choi(superop:np.ndarray, dim:int=None)->np.ndarray:
     """
@@ -260,7 +260,13 @@ def op2fullspace(op:np.ndarray, i:int, N:int, num_sites:int=1):
     return np.kron(id1, np.kron(op, id2))
 
 def dissipative2liouvillian_full(L:np.ndarray, i:int, N:int, num_sites:int=1):
-    "convert local lindbladian term to an operator in full Hilbert"
+    """
+    Convert local lindbladian term to an operator in full Hilbert
+
+    Steps:
+    1. convert local operator into its full hilbert space by tensoring with identities
+    2. Vectorize the operator in the full hilbert space, doubling dimension of Hilbert space
+    """
     L_full = op2fullspace(op=L, i=i, N=N, num_sites=num_sites)
     L_full_vec = vectorize_dissipative(L_full)
     return L_full_vec
@@ -317,13 +323,13 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
 
 def create_2local_liouvillians(Li:Union[np.ndarray, list], N:int, d:int, pbc:bool=False):
     Lvec_odd_full = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
-    Lvec_even_full = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)   
+    Lvec_even_full = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
 
     if not isinstance(Li, list):
-        Li = [Li] 
+        Li = [Li]
 
     for L in Li:
-        _, Lvec_odd, Lvec_even = local_lindbladian_to_full_liouvillians(Lnn=L, N=N, d=d, pbc=pbc)    
+        _, Lvec_odd, Lvec_even = local_lindbladian_to_full_liouvillians(Lnn=L, N=N, d=d, pbc=pbc)
         Lvec_odd_full += Lvec_odd
         Lvec_even_full += Lvec_even
     return Lvec_odd_full + Lvec_even_full, Lvec_odd_full, Lvec_even_full
@@ -331,7 +337,7 @@ def create_2local_liouvillians(Li:Union[np.ndarray, list], N:int, d:int, pbc:boo
 def local_lindbladian_to_full_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:bool=False):
     """
     Create the liouvillians from a local two-sites lindbladian operator
-    
+
     Returns: total, odd, even liouvillians (superoperators)
     """
 
@@ -352,7 +358,7 @@ def local_lindbladian_to_full_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:boo
 
     if pbc:
         Lvec_even += create_pbc_liouvillian(Lnn=Lnn, N=N, d=d)
-        
+
     return Lvec_even + Lvec_odd, Lvec_odd, Lvec_even
 
 def create_pbc_liouvillian(Lnn:np.ndarray, N:int, d:int):
@@ -399,11 +405,11 @@ def create_trotter_layers(liouvillians:list[np.ndarray], tau:float=1, order:int=
 def create_supertensored_from_local(localop:np.ndarray, N:int, pbc:bool=False, layer:int=0):
     """
     We asssume we have only one single operator tensored accross all sites to get the full superop (except N-1,0)
-    
+
     We are assuming localop is acting on two sites
     Convention: odd layer = 0,2, even layer = 1
     pbc will determine if the operator acting on sites (N-1,0) is an identity (False) or localop (True)
-    layer determines which layer (even or odd) this would be acting on. 
+    layer determines which layer (even or odd) this would be acting on.
     """
     assert N%2 == 0, 'Only even number of sites allowed'
 
@@ -426,7 +432,7 @@ def get_indices_supertensored2liouvillianfull(N:int):
     """
     get the source and destination indices to compare full superoperator created from local superoperators tensored with the full superoperator created from exponentiating the full vectorized lindbladians.
 
-    Here we assume that we are going from tensored-full-liouvillian
+    Here we assume that we are going from tensored->full-liouvillian
     NOTE: for opposite convention just interchange roles of source_full <-> destination_full
     """
     # create indices to swap for a single side of the superoperator
@@ -732,13 +738,13 @@ def super2ortho(x:np.ndarray, rank:int=None, eps:float=1e-30)->np.ndarray:
     x = super2choi(x)
     if not rank:
         rank = np.linalg.matrix_rank(x)
-    return choi2ortho(factorize_psd_truncated(x, chi_max=rank, eps=eps)) 
+    return choi2ortho(factorize_psd_truncated(x, chi_max=rank, eps=eps))
 
 def ortho2super(x:np.ndarray)->np.ndarray:
     """
     Transform the x matrix belonging to the Stiefel Manifold (isometric) to the correspondent superoperator
 
-    This looks like: stiefel ->  choi_factor ->  choi -> superop 
+    This looks like: stiefel ->  choi_factor ->  choi -> superop
     """
     return choi2super(unfactorize_psd(ortho2choi(x)))
 
@@ -753,7 +759,7 @@ def split_matrix_svd(op:np.ndarray, chi_max:int=2, eps:float=1e-9):
 
     args:
     ---------
-    op: 
+    op:
         matrix of which singular values will be truncated
     chi_max:
         maximum number of singular values that will be kept
@@ -774,7 +780,7 @@ def split_matrix_svd(op:np.ndarray, chi_max:int=2, eps:float=1e-9):
     assert chi_keep >=1
 
     # keep the largest `chi_keep` singular values
-    idx_keep = np.argsort(s)[::-1][:chi_keep]  
+    idx_keep = np.argsort(s)[::-1][:chi_keep]
     u = u[:, idx_keep]
     v = v[idx_keep, :]
     s = s[idx_keep]
@@ -784,9 +790,9 @@ def split_matrix_svd(op:np.ndarray, chi_max:int=2, eps:float=1e-9):
 def factorize_psd_truncated(psd:np.ndarray, chi_max:int=2, eps:float=1e-9)->np.ndarray:
     """
     Factorize psd matrix truncating the singular values based on tolerance parameters
-    
+
     More robust to small values than cholesky decomposition from numpy.
-    
+
     Returns x' such that psd ≈ x' @ x'.conj().T
     """
     x, s, xdg = split_matrix_svd(psd, chi_max, eps)
@@ -832,7 +838,7 @@ def is_identity_map(map:np.ndarray, representation:str='superop')->bool:
 def compose_superops_list(superops:list[np.ndarray])->np.ndarray:
     """
     Compose (matrix multiply) a list of superoperators.
-    
+
     We assume that the list order follows the application of the channel.
     i.e. superops[0] is applied first to the vectorized density matrix
     """
