@@ -38,13 +38,15 @@ def plot_cost_function_vs_iter(cost_list:list[float], labels:list[str]=None):
     plt.legend()
 
 
-def plot_pretty(ydatas:list[list[float]], labels:list[str], ylabel:str, xlabel:str, title:str=None, xdatas:list[list[float]]=None, integers:bool=False, legend_out:bool=True, use_semilogy:bool=False, optimize:bool=True, marker_step:int=5):
+def plot_pretty(ydatas:list[list[float]], labels:list[str], ylabel:str, xlabel:str, title:str=None, xdatas:list[list[float]]=None, integers:bool=False, legend_out:bool=True, use_semilogy:bool=False, optimize:bool=True, marker_step:int=5, loglog:bool=False, idx_main:int=2):
     """
     Utility functino to plot prettily a list of lists of data
     """
 
     # Define your color palette
-    color_palette = ['#2EC4B6', '#B9C7DF','#294C60', '#E71D36', '#88D498', '#FF8C42', '#AEA0CF']
+
+    color_palette = ['#2EC4B6', '#B9C7DF', '#E71D36', '#88D498', '#FF8C42', '#AEA0CF']
+    color_palette.insert(idx_main, '#294C60')
 
     # Define marker styles
     marker_styles = ['o', 's', '^', 'D', 'v', '>', '<', 'x', '+', '*']
@@ -65,6 +67,8 @@ def plot_pretty(ydatas:list[list[float]], labels:list[str], ylabel:str, xlabel:s
                 xdata = xdata[::marker_step]
         if use_semilogy:
             plot_function = plt.semilogy
+        elif loglog:
+            plot_function = plt.loglog
         else:
             plot_function = plt.plot
         plot_function(xdata, ydata, '-'+ marker_style, color=color_palette[i], label=labels[i], linewidth=2)
@@ -75,15 +79,20 @@ def plot_pretty(ydatas:list[list[float]], labels:list[str], ylabel:str, xlabel:s
     plt.xlabel(xlabel, fontsize=14)
     plt.ylabel(ylabel, fontsize=14)
 
+    # Set y-axis tick formatter and locator
+    if not use_semilogy and not loglog:
+        formatter = ScalarFormatter(useMathText=True)
+        formatter.set_powerlimits((-2, 3))  # Set the exponent range
+        plt.gca().yaxis.set_major_formatter(formatter)
+        plt.gca().yaxis.set_major_locator(AutoLocator())
+
+    # Set x-axis tick formatter
+    formatter = ScalarFormatter(useMathText=False)
+    formatter.set_powerlimits((-2, 3))  # Set the exponent range
+    plt.gca().xaxis.set_major_formatter(formatter)
     if integers:
         # Set x-axis ticks to integers
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
-
-     # Set y-axis tick formatter and locator
-    formatter = ScalarFormatter(useMathText=True)
-    formatter.set_powerlimits((-2, 3))  # Set the exponent range
-    plt.gca().yaxis.set_major_formatter(formatter)
-    plt.gca().yaxis.set_major_locator(AutoLocator())
 
      # Add legend with larger font size and place it to the right of the plot
     if legend_out:

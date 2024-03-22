@@ -124,7 +124,7 @@ def choi2super(choi:np.ndarray, dim:int=None)->np.ndarray:
     superop = superop.swapaxes(1, 2).reshape([dim ** 2, dim ** 2]) #see graphical proof
     return superop
 
-def choi2kraus(choi:np.ndarray, tol:float = 1e-9, rank:int=None,method:str='svd')->list[np.ndarray]:
+def choi2kraus(choi:np.ndarray, tol:float = None, rank:int=None,method:str='svd')->list[np.ndarray]:
     """
     Convert a choi matrix to its kraus representation
 
@@ -725,7 +725,7 @@ def ortho2choi(x:np.ndarray, dim:int=None)->np.ndarray:
     x = x.swapaxes(1,2).reshape([dim**2, k])
     return x
 
-def super2ortho(x:np.ndarray, rank:int=None, eps:float=1e-30)->np.ndarray:
+def super2ortho(x:np.ndarray, rank:int=None)->np.ndarray:
     """
     Transform the superoperator x into its isometric form (Sitefel Manifold)
 
@@ -738,7 +738,7 @@ def super2ortho(x:np.ndarray, rank:int=None, eps:float=1e-30)->np.ndarray:
     x = super2choi(x)
     if not rank:
         rank = np.linalg.matrix_rank(x)
-    return choi2ortho(factorize_psd_truncated(x, chi_max=rank, eps=eps))
+    return choi2ortho(factorize_psd_truncated(x, chi_max=rank))
 
 def ortho2super(x:np.ndarray)->np.ndarray:
     """
@@ -776,7 +776,10 @@ def split_matrix_svd(op:np.ndarray, chi_max:int=2, eps:float=1e-9):
     assert op.ndim == 2
     u, s, v = np.linalg.svd(op, full_matrices=False)
     # determine which parameter gives the least nunber of singular values to keep
-    chi_keep = min(chi_max, np.sum(s > eps))
+    if eps is None:
+        chi_keep = chi_max
+    else:
+        chi_keep = min(chi_max, np.sum(s > eps))
     assert chi_keep >=1
 
     # keep the largest `chi_keep` singular values
@@ -787,7 +790,7 @@ def split_matrix_svd(op:np.ndarray, chi_max:int=2, eps:float=1e-9):
     return u, s, v
 
 
-def factorize_psd_truncated(psd:np.ndarray, chi_max:int=2, eps:float=1e-9)->np.ndarray:
+def factorize_psd_truncated(psd:np.ndarray, chi_max:int=2, eps:float=None)->np.ndarray:
     """
     Factorize psd matrix truncating the singular values based on tolerance parameters
 
