@@ -2,7 +2,7 @@ import numpy as np
 import warnings
 
 
-def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, save_x=False, check_convergence:bool=False, **kwargs):
+def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, save_x=False, check_convergence:bool=False, show_quotient:bool=True, **kwargs):
     """
     Optimization via the Riemannian trust-region (RTR) algorithm.
 
@@ -11,14 +11,14 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, sav
         P.-A. Absil, R. Mahony, Rodolphe Sepulchre
         Optimization Algorithms on Matrix Manifolds
         Princeton University Press (2008)
-    
+
     args:
     ---------
-    f: 
-        real valued function representing the optimization problem. 
+    f:
+        real valued function representing the optimization problem.
         it should accept as single input a list of elements of the manifold to optimze over.
     retract:
-        retraction from tanget space at x to original manifold. 
+        retraction from tanget space at x to original manifold.
         signature: x_list:list of elements of manifold, eta: array containing the parametrization of the tangent elements
 
     returns:
@@ -71,7 +71,8 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, sav
             elif rho > 0.75 and on_boundary:
                 # enlarge radius
                 radius = min(2 * radius, maxradius)
-            print('radius', radius)
+            if show_quotient:
+                print('rho:', rho, 'radius:', radius)
             if rho > rho_trust:
                 x = x_next
             if gfunc is not None:
