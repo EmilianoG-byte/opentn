@@ -52,6 +52,7 @@ def plot_pretty(ydatas:list[list[float]],
                 comparison_value:float=None,
                 inset:bool=False,
                 inset_idx:int=10,
+                inset_label:bool=False
                 ):
     """
     Utility functino to plot prettily a list of lists of data
@@ -104,45 +105,57 @@ def plot_pretty(ydatas:list[list[float]],
         plt.gca().yaxis.set_major_locator(AutoLocator())
 
     # Set x-axis tick formatter
-    formatter = ScalarFormatter(useMathText=False)
+    formatter = ScalarFormatter(useMathText=True)
     formatter.set_powerlimits((-2, 3))  # Set the exponent range
     plt.gca().xaxis.set_major_formatter(formatter)
     if integers:
         # Set x-axis ticks to integers
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
 
-     # Add legend with larger font size and place it to the right of the plot
-    if legend_out:
-        plt.legend(fontsize=12, loc='center left', bbox_to_anchor=(1, 0.85))
-    else:
-        plt.legend(fontsize=12)
-
     main_axis = plt.gca()
-    # Add inset if requested
+
+    # see: https://stackoverflow.com/questions/21001088/how-to-add-different-graphs-as-an-inset-in-another-python-graph
+
     if inset:
-        yticks = [ydata[inset_idx], ydata[-1]]
-        ax_inset = inset_axes(main_axis, width="40%", height="40%", loc='upper right', axes_kwargs={"yticks":yticks})
+        min_value = 100
+        max_value = 0
+        ax_inset = inset_axes(main_axis, width="40%", height="40%", loc='upper right')
         for i, ydata in enumerate(ydatas):
             if xdatas is None:
                 xdata = range(1, len(ydata)+1)
             else:
                 xdata = xdatas[i]
-            ax_inset.semilogy(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_style, color=color_palette[i], label=labels[i], linewidth=2)
+
+            min_value = min(ydata[inset_idx:][-1], min_value)
+            max_value = max(ydata[inset_idx:][0], max_value)
+            if use_semilogy:
+                ax_inset.semilogy(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_style, color=color_palette[i], label=labels[i], linewidth=2)
+            else:
+                ax_inset.plot(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_style, color=color_palette[i], label=labels[i], linewidth=2)
 
         # ax_inset.set_xlim(xdata[inset_x], xdata[-1])
         # ax_inset.set_ylim(min(ydata[inset_y:]), max(ydata[inset_y:]))  # Adjusted y-axis limits
         ax_inset.set_xlabel(xlabel)
-        # Set y-axis tick locator for inset plot
-        # ax_inset.tick_params(labelleft=False, labelbottom=False)
-        # ax_inset.set_yticks([])
-        # ax_inset.yaxis.set_major_locator(MultipleLocator(0.1))  # Set the interval between major ticks
-         # Remove old ticks from the inset plot
-        # ax_inset.yaxis.set_major_locator(MaxNLocator(nbins=4))
-        ax_inset.tick_params(axis='y', which='both',labelleft=True, left=True, right=False)
-        # ax_inset.set_yticks(yticks, minor=False)
 
+        if inset_label:
+        # Add x 10^{-5} to the label
+            ax_inset.set_yticks([min_value, max_value])
+            ax_inset.set_yticklabels([f"{min_value}"[:3], f"{max_value}"[:3]])
 
+        # Remove tick labels from other ticks
+        # https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.tick_params.html
+        # from
+        ax_inset.tick_params(axis='y', which='both',labelleft=inset_label, left=True, right=False)
 
+        # Mark the inset in the main plot
+        # https://stackoverflow.com/questions/13583153/how-to-zoomed-a-portion-of-image-and-insert-in-the-same-plot-in-matplotlib
+        # from
         mark_inset(main_axis, ax_inset, loc1=3, loc2=4, fc="none", ec="0.5")
+
+    # Add legend with larger font size and place it to the right of the plot
+    if legend_out:
+        plt.legend(fontsize=12, loc='center left', bbox_to_anchor=(1, 0.75))
+    else:
+        plt.legend(fontsize=12, loc='best')
     # Return the figure
     return plt.gcf()
