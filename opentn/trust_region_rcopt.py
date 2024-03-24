@@ -62,7 +62,7 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, sav
             x_next = retract(x, eta)
             fx = f(x)
             f_iter.append(fx)
-            print(f'cost function: {fx}')
+            print(f'f(x{k}): {fx}')
             # Eq. (7.7)
             rho = (f(x_next) - fx) / (np.dot(grad, eta) + 0.5 * np.dot(eta, hess @ eta))
             if rho < 0.25:
@@ -72,7 +72,7 @@ def riemannian_trust_region_optimize(f, retract, gradfunc, hessfunc, x_init, sav
                 # enlarge radius
                 radius = min(2 * radius, maxradius)
             if show_quotient:
-                print('rho:', rho, 'radius:', radius)
+                print('rho:', rho, 'updated radius:', radius)
             if rho > rho_trust:
                 x = x_next
             if gfunc is not None:

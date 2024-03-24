@@ -4,10 +4,8 @@ A module containing utility functions
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.ticker import MaxNLocator
-from matplotlib.ticker import ScalarFormatter, AutoLocator
-
-
+from matplotlib.ticker import ScalarFormatter, AutoLocator, MultipleLocator, MaxNLocator
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 
 def set_discrete_labels(labels:list[str], ax=None, rotation=65):
     "must be called after plotting the data (e.g. right before `plt.legend()`)"
@@ -38,7 +36,23 @@ def plot_cost_function_vs_iter(cost_list:list[float], labels:list[str]=None):
     plt.legend()
 
 
-def plot_pretty(ydatas:list[list[float]], labels:list[str], ylabel:str, xlabel:str, title:str=None, xdatas:list[list[float]]=None, integers:bool=False, legend_out:bool=True, use_semilogy:bool=False, optimize:bool=True, marker_step:int=5, loglog:bool=False, idx_main:int=2):
+def plot_pretty(ydatas:list[list[float]],
+                labels:list[str],
+                ylabel:str,
+                xlabel:str,
+                title:str=None,
+                xdatas:list[list[float]]=None,
+                integers:bool=False,
+                legend_out:bool=True,
+                use_semilogy:bool=False,
+                optimize:bool=True,
+                marker_step:int=5,
+                loglog:bool=False,
+                idx_main:int=2,
+                comparison_value:float=None,
+                inset:bool=False,
+                inset_idx:int=10,
+                ):
     """
     Utility functino to plot prettily a list of lists of data
     """
@@ -53,6 +67,9 @@ def plot_pretty(ydatas:list[list[float]], labels:list[str], ylabel:str, xlabel:s
 
     # Increase figure size
     plt.figure(figsize=(8, 6), dpi=200)
+
+    if comparison_value is not None:
+        plt.axhline(y=comparison_value, color='gray', linestyle='--')
 
     # Plot the data with custom colors, line styles, and markers
     for i, ydata in enumerate(ydatas):
@@ -100,5 +117,32 @@ def plot_pretty(ydatas:list[list[float]], labels:list[str], ylabel:str, xlabel:s
     else:
         plt.legend(fontsize=12)
 
+    main_axis = plt.gca()
+    # Add inset if requested
+    if inset:
+        yticks = [ydata[inset_idx], ydata[-1]]
+        ax_inset = inset_axes(main_axis, width="40%", height="40%", loc='upper right', axes_kwargs={"yticks":yticks})
+        for i, ydata in enumerate(ydatas):
+            if xdatas is None:
+                xdata = range(1, len(ydata)+1)
+            else:
+                xdata = xdatas[i]
+            ax_inset.semilogy(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_style, color=color_palette[i], label=labels[i], linewidth=2)
+
+        # ax_inset.set_xlim(xdata[inset_x], xdata[-1])
+        # ax_inset.set_ylim(min(ydata[inset_y:]), max(ydata[inset_y:]))  # Adjusted y-axis limits
+        ax_inset.set_xlabel(xlabel)
+        # Set y-axis tick locator for inset plot
+        # ax_inset.tick_params(labelleft=False, labelbottom=False)
+        # ax_inset.set_yticks([])
+        # ax_inset.yaxis.set_major_locator(MultipleLocator(0.1))  # Set the interval between major ticks
+         # Remove old ticks from the inset plot
+        # ax_inset.yaxis.set_major_locator(MaxNLocator(nbins=4))
+        ax_inset.tick_params(axis='y', which='both',labelleft=True, left=True, right=False)
+        # ax_inset.set_yticks(yticks, minor=False)
+
+
+
+        mark_inset(main_axis, ax_inset, loc1=3, loc2=4, fc="none", ec="0.5")
     # Return the figure
     return plt.gcf()
