@@ -4,8 +4,9 @@ A module containing utility functions
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.ticker import ScalarFormatter, AutoLocator, MultipleLocator, MaxNLocator
+from matplotlib.ticker import ScalarFormatter, AutoLocator, MaxNLocator
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
+from typing import Union
 
 def set_discrete_labels(labels:list[str], ax=None, rotation=65):
     "must be called after plotting the data (e.g. right before `plt.legend()`)"
@@ -49,7 +50,8 @@ def plot_pretty(ydatas:list[list[float]],
                 marker_step:int=5,
                 loglog:bool=False,
                 idx_main:int=2,
-                comparison_value:float=None,
+                comparison_value:Union[float, list, np.ndarray]=None,
+                comparison_label:str="",
                 inset:bool=False,
                 inset_idx:int=10,
                 inset_label:bool=False
@@ -69,8 +71,22 @@ def plot_pretty(ydatas:list[list[float]],
     # Increase figure size
     plt.figure(figsize=(8, 6), dpi=200)
 
-    if comparison_value is not None:
-        plt.axhline(y=comparison_value, color='gray', linestyle='--')
+
+
+    if use_semilogy:
+        plot_function = plt.semilogy
+    elif loglog:
+        plot_function = plt.loglog
+    else:
+        plot_function = plt.plot
+
+    if isinstance(comparison_value, (float, int, )):
+        plt.axhline(y=comparison_value, color='gray', linestyle='--', label=comparison_label)
+    elif isinstance(comparison_value, tuple):
+        assert len(comparison_value)==2, "comparison should be a tuple with x and y data"
+        plot_function(comparison_value[0], comparison_value[1], '--', color='gray', label=comparison_label)
+    elif isinstance(comparison_value, (list, np.ndarray)):
+        plot_function(range(1, len(comparison_value)+1), comparison_value, '--', color='gray', label=comparison_label)
 
     # Plot the data with custom colors, line styles, and markers
     for i, ydata in enumerate(ydatas):
@@ -83,12 +99,7 @@ def plot_pretty(ydatas:list[list[float]],
             if len(ydata) > 25:
                 ydata = ydata[::marker_step]
                 xdata = xdata[::marker_step]
-        if use_semilogy:
-            plot_function = plt.semilogy
-        elif loglog:
-            plot_function = plt.loglog
-        else:
-            plot_function = plt.plot
+
         plot_function(xdata, ydata, '-'+ marker_style, color=color_palette[i], label=labels[i], linewidth=2)
 
      # Add title and labels
@@ -104,7 +115,7 @@ def plot_pretty(ydatas:list[list[float]],
         plt.gca().yaxis.set_major_formatter(formatter)
         plt.gca().yaxis.set_major_locator(AutoLocator())
 
-    # Set x-axis tick formatter
+
     formatter = ScalarFormatter(useMathText=True)
     formatter.set_powerlimits((-2, 3))  # Set the exponent range
     plt.gca().xaxis.set_major_formatter(formatter)
@@ -112,11 +123,10 @@ def plot_pretty(ydatas:list[list[float]],
         # Set x-axis ticks to integers
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
 
-    main_axis = plt.gca()
-
     # see: https://stackoverflow.com/questions/21001088/how-to-add-different-graphs-as-an-inset-in-another-python-graph
 
     if inset:
+        main_axis = plt.gca()
         min_value = 100
         max_value = 0
         ax_inset = inset_axes(main_axis, width="40%", height="40%", loc='upper right')
