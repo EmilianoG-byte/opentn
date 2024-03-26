@@ -54,7 +54,8 @@ def plot_pretty(ydatas:list[list[float]],
                 comparison_label:str="",
                 inset:bool=False,
                 inset_idx:int=10,
-                inset_label:bool=False
+                inset_label:bool=False,
+                legend_pos:int=None
                 ):
     """
     Utility functino to plot prettily a list of lists of data
@@ -167,6 +168,8 @@ def plot_pretty(ydatas:list[list[float]],
     # Add legend with larger font size and place it to the right of the plot
     if legend_out:
         plt.legend(fontsize=12, loc='center left', bbox_to_anchor=(1, height))
+    elif legend_pos is not None:
+        plt.legend(fontsize=12, loc=legend_pos)
     else:
         plt.legend(fontsize=12, loc='best')
     # Return the figure
