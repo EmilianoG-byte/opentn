@@ -50,6 +50,7 @@ def plot_pretty(ydatas:list[list[float]],
                 marker_step:int=5,
                 loglog:bool=False,
                 idx_main:int=2,
+                horizontal_value:float=None,
                 comparison_value:Union[float, list, np.ndarray]=None,
                 comparison_label:str="",
                 inset:bool=False,
@@ -80,6 +81,8 @@ def plot_pretty(ydatas:list[list[float]],
     else:
         plot_function = plt.plot
 
+    if horizontal_value:
+        plt.axhline(y=horizontal_value, color='#E71D36', linestyle='--', alpha=0.65)
     if isinstance(comparison_value, (float, int, )):
         plt.axhline(y=comparison_value, color='gray', linestyle='--', label=comparison_label)
     elif isinstance(comparison_value, tuple):
@@ -162,9 +165,13 @@ def plot_pretty(ydatas:list[list[float]],
         # from
         mark_inset(main_axis, ax_inset, loc1=3, loc2=4, fc="none", ec="0.5")
 
+        height_legend = 0.75
+    else:
+        height_legend = 0.825
+
     # Add legend with larger font size and place it to the right of the plot
     if legend_out:
-        plt.legend(fontsize=12, loc='center left', bbox_to_anchor=(1, 0.75))
+        plt.legend(fontsize=12, loc='center left', bbox_to_anchor=(1, height_legend))
     else:
         plt.legend(fontsize=12, loc='best')
     # Return the figure
