@@ -256,7 +256,6 @@ def plot_groups_pretty(ygroups:list[list[float]],
             colour_shades = [colour_group]*len(group)
 
         alpha = 1
-        print(len(colour_shades))
         for j, data in enumerate(group):
             xdata = range(1, len(data)+1)
             plot_function(xdata, data, '-'+ marker_style, color=colour_shades[j], label=labels_group[j], linewidth=2, alpha=alpha)
