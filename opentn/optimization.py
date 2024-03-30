@@ -120,8 +120,7 @@ def model_stiefel_local(xs:np.ndarray, N:int, d:int)->np.ndarray:
     We assume the sites over which the sub-layers act alternate between odd-even (second order trotter), where the even layer is subject to periodic boundary conditions (pbc)
     Even for higher n>1, we still have this pattern because the last sublayer of each time step gets contracted with the first sublayer of the next timestep (except for the last timestep)
     """
-    # This condition was relaxed!
-    # assert len(xs)==3, 'only odd-even-odd structure allowed'
+
     superops_local = [ortho2super(x) for x in xs]
     # we assume the same operator acts on all sites (unlike before for even layer)
     superops_full_split = [create_supertensored_from_local(localop=op, N=N, pbc=True) for op in superops_local]
@@ -160,18 +159,18 @@ def compute_loss(xi:np.ndarray, loss_fn, model, exact:np.ndarray, **kwargs):
 
 def get_kitaev_trotter_local_ansatz(gamma:float, tau:int, n:int)->list[np.ndarray]:
     """
-    List of super operators used in the second-order trotter approximation 
+    List of super operators used in the second-order trotter approximation
     of the dissipative evolution corresponding to the kitaev wire noise model
     using `n` time steps
     """
-   
+
     Lnn = get_kitaev_nn_linbladian(gamma)
     return get_general_trotter_local_ansatz(lindbladians=[Lnn], tau=tau, n=n)
 
 
 def get_general_trotter_local_ansatz(lindbladians:list[np.ndarray], tau:int, n:int) -> list[np.ndarray]:
     """
-    List of superoperators created from a list of lindbladians used in the 
+    List of superoperators created from a list of lindbladians used in the
     second-order trotter approximation using n time steps
 
     `len()` of output is the number of layers in trotterization:= 3n - (n-1) = 2n + 1
@@ -190,7 +189,7 @@ def compute_kitaev_approximation_error(d:int, N:int, gamma:float, tau:int, n:int
 
     args:
     ---------
-    d: 
+    d:
         local physical dimension
     N:
         number of physical sites
@@ -201,7 +200,7 @@ def compute_kitaev_approximation_error(d:int, N:int, gamma:float, tau:int, n:int
     n:
         number of timesteps in trotterization. tau = n * time_step
     xs:
-        list of 3n - (n-1) = 2n + 1 operators of the stiefel manifold acting on two sites 
+        list of 3n - (n-1) = 2n + 1 operators of the stiefel manifold acting on two sites
         (4-effective counting the conjugate), such that each operator is of shape: (d**2 * rank, d**2)
         corresponding to the local-two-site kitaev noise channel.
         An alternating odd-even structure is assumed.
@@ -234,7 +233,7 @@ def gds(fn:Callable, x0:list, exact:np.ndarray, rate:float = 0.01, iter:int = 10
     args:
     ---------
     fn:
-        function to be optimized. The signature should be: 
+        function to be optimized. The signature should be:
         (xi:parameters_to_optimimize, loss_fn:loss function, model:model for prediction, exact:exact_value_to_compare)
     x0:
         initial list of parameters for optimization
@@ -286,11 +285,11 @@ def gds(fn:Callable, x0:list, exact:np.ndarray, rate:float = 0.01, iter:int = 10
             if i == iter-1:
                 grads_list.append(grad_x)
                 params_list.append(xi)
-            
+
     return cost_list, grads_list, params_list
 
 
-# from Forest Benchmarking: 
+# from Forest Benchmarking:
 # https://github.com/rigetti/forest-benchmarking/blob/master/forest/benchmarking/distance_measures.py
 
 def diamond_norm_distance(choi0: np.ndarray, choi1: np.ndarray) -> float:
@@ -316,7 +315,7 @@ def diamond_norm_distance(choi0: np.ndarray, choi1: np.ndarray) -> float:
     """
     # Kudos: Based on MatLab code written by Marcus P. da Silva
     # (https://github.com/BBN-Q/matlab-diamond-norm/)
-   
+
     assert choi0.shape == choi1.shape
     assert choi0.shape[0] == choi1.shape[1]
     dim_squared = choi0.shape[0]

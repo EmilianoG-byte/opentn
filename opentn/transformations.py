@@ -443,7 +443,7 @@ def get_indices_supertensored2liouvillianfull(N:int):
     destination_full = destination_one_side + list(np.array(destination_one_side) + 2*N)
     return source_full, destination_full
 
-def permute_cyclic(a:np.ndarray, n:int=1, direction:str='left')->np.ndarray:
+def permute_cyclic(a:np.ndarray, n:int=1, direction:str='right')->np.ndarray:
     """
     Permute cyclicly array ``a`` to the LEFT ``n`` places.
     """
@@ -467,7 +467,7 @@ def permute_operator_pbc(op:np.ndarray, N:int, d:int, direction:str='right'):
     """
     Permute operator assumed to be acting non-trivially on N-2 and N-1 to act on N-1 and 0
     """
-    permutation = permute_cyclic(list(range(N)), direction=direction)
+    permutation = permute_cyclic(list(range(N)), n=1, direction=direction)
     return permute_operator(op=op, permutation=permutation, d=d)
 
 def swap_superop_indices(superop:np.ndarray, source_indices:list[int], destination_indices:list[int], N:int, d:int, shift_pbc:bool=False):
@@ -476,7 +476,7 @@ def swap_superop_indices(superop:np.ndarray, source_indices:list[int], destinati
     swaped_superop = jnp.moveaxis(swaped_superop, source=source_indices, destination=destination_indices)
     if shift_pbc:
         # NOTE: here we assumed permutation to the left. If all operators are the same on all sites this should not change anything.
-        idx_permuted = permute_cyclic(list(range(N)), 1) + permute_cyclic(list(range(N,2*N)), 1)
+        idx_permuted = permute_cyclic(list(range(N)), n=1, direction='right') + permute_cyclic(list(range(N,2*N)), n=1, direction='right')
         swaped_superop = jnp.transpose(swaped_superop, idx_permuted + list(np.array(idx_permuted) + 2*N))
     swaped_superop = jnp.reshape(swaped_superop, newshape=superop.shape)
     return swaped_superop
