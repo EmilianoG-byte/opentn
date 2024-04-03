@@ -57,7 +57,7 @@ def lindbladian2super(H:np.ndarray = None, Li:list[np.ndarray] = [], dim:int=Non
             dim = H.shape[0]
         elif Li:
             dim = Li[0].shape[0]
-    superop = np.zeros(shape=(dim ** 2, dim ** 2),dtype=complex)
+    superop = np.zeros(shape=(dim ** 2, dim ** 2),dtype=float)
     if H:
          superop += vectorize_hamiltonian(H=H, dim=dim)
     for L in Li:
@@ -174,7 +174,7 @@ def kraus2superop(kraus_list:list[np.ndarray])->np.ndarray:
     if not isinstance(kraus_list, list):  # handle input of single kraus op
         kraus_list = [kraus_list]
     rows, cols = kraus_list[0].shape
-    superop = np.zeros(shape=(rows**2, cols**2), dtype=complex)
+    superop = np.zeros(shape=(rows**2, cols**2), dtype=float)
     for kraus in kraus_list:
         superop += np.kron(kraus, kraus.conj())
     return superop
@@ -237,15 +237,15 @@ def vectorize_hamiltonian(H:np.ndarray, dim:int=None)->np.ndarray:
     "Vectorize Hamiltonian.  Here we assume the i is included in the hamiltonian"
     if not dim:
         dim = H.shape[0]
-    I = np.eye(dim, dtype=complex)
+    I = np.eye(dim, dtype=float)
     return np.kron(H, I) - np.kron(I, H.T)
 
 def vectorize_dissipative(L:np.ndarray, dim:int=None)->np.ndarray:
     "Vectorize dissipative part of lindbladian"
     if not dim:
         dim = L.shape[0]
-    L_vec = np.zeros(shape=(dim ** 2, dim ** 2),dtype=complex)
-    I = np.eye(dim, dtype=complex)
+    L_vec = np.zeros(shape=(dim ** 2, dim ** 2),dtype=float)
+    I = np.eye(dim, dtype=float)
     L_vec =  np.kron(L, L.conj()) - 0.5*np.kron(L.T.conj()@L, I) - 0.5*np.kron(I, L.T@L.conj())
     return L_vec
 
@@ -322,8 +322,8 @@ def factorize_psd(psd:np.ndarray, check_hermitian:bool=False, tol:float=1e-9):
     return X
 
 def create_2local_liouvillians(Li:Union[np.ndarray, list], N:int, d:int, pbc:bool=False):
-    Lvec_odd_full = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
-    Lvec_even_full = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
+    Lvec_odd_full = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=float)
+    Lvec_even_full = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=float)
 
     if not isinstance(Li, list):
         Li = [Li]
@@ -348,11 +348,11 @@ def local_lindbladian_to_full_liouvillians(Lnn:np.ndarray, N:int, d:int, pbc:boo
     if N == num_sites or N == 1: # using pbc for a single site would not make sense
         pbc = False
 
-    Lvec_odd = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
+    Lvec_odd = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=float)
     for i in range(0, N, 2):
         Lvec_odd += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=num_sites)
 
-    Lvec_even = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=complex)
+    Lvec_even = jnp.zeros(shape=(d**(2*N), d**(2*N)), dtype=float)
     for i in range(1, N-1, 2):
         Lvec_even += dissipative2liouvillian_full(L=Lnn, i=i, N=N, num_sites=num_sites)
 

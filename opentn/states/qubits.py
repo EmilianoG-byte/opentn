@@ -24,14 +24,14 @@ def get_ladder_operator(num_levels:int=2, adjoint:bool=False) -> np.ndarray:
     num_levels: Optional(int)
         num of levels for operator. Defaults to 2 (qubit)
     adjoint: Optional(bool)
-        determines whether to return anhilitation (a) or creation (a+) operator. 
-        Defaults to False (anhilitation: a)    
+        determines whether to return anhilitation (a) or creation (a+) operator.
+        Defaults to False (anhilitation: a)
     returns:
     ---------
     a: (np.ndarray)
         operator
     """
-    a = np.diag(v=np.array([np.sqrt(i) for i in range(1,num_levels)],dtype=complex),k=1)
+    a = np.diag(v=np.array([np.sqrt(i) for i in range(1,num_levels)],dtype=float),k=1)
     if adjoint:
         a = a.conj().T
     return a
@@ -40,19 +40,19 @@ def convert_to_comp_basis(U:np.ndarray, num_levels:int, env_first:bool=False) ->
     """
     convert operator (unitary matrix) into comp basis state, i.e. 00, 01, 10, 11
     num_levels determines the original total number of levels in the the sites making up the unitary operator
-    
+
     args:
     ---------
     U: np.ndarray
         unitary operator in complete 'lab basis'
     num_levels: int
-        num of levels for operator. Defaults to 2 (qubit) 
+        num of levels for operator. Defaults to 2 (qubit)
     returns:
     ---------
     U_comp_basis: np.ndarray
         unitary operator in reduced 4 level comp basis
     """
-    if env_first: 
+    if env_first:
         U_comp_basis = np.array([element[[0,num_levels,1, num_levels+1]] for element in U[[0,num_levels,1, num_levels+1]]])
     else:
         U_comp_basis = np.array([element[[0,1,num_levels, num_levels+1]] for element in U[[0,1,num_levels, num_levels+1]]])
