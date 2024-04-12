@@ -166,13 +166,14 @@ def plot_pretty(ydatas:list[list[float]],
                 xdata = range(1, len(ydata)+1)
             else:
                 xdata = xdatas[i]
-
+            print(min_value)
             min_value = min(ydata[inset_idx:][-1], min_value)
             max_value = max(ydata[inset_idx:][0], max_value)
+            marker_style = marker_styles[i % len(marker_styles)]
             if use_semilogy:
-                ax_inset.semilogy(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_style, color=colour_palette[i], label=labels[i], linewidth=2)
+                ax_inset.semilogy(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_styles[i], color=colour_palette[i], label=labels[i], linewidth=2)
             else:
-                ax_inset.plot(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_style, color=colour_palette[i], label=labels[i], linewidth=2)
+                ax_inset.plot(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_styles[i], color=colour_palette[i], label=labels[i], linewidth=2)
 
         # ax_inset.set_xlim(xdata[inset_x], xdata[-1])
         # ax_inset.set_ylim(min(ydata[inset_y:]), max(ydata[inset_y:]))  # Adjusted y-axis limits
@@ -258,7 +259,11 @@ def plot_groups_pretty(ygroups:list[list[float]],
         alpha = 1
         for j, data in enumerate(group):
             xdata = range(1, len(data)+1)
-            plot_function(xdata, data, '-'+ marker_style, color=colour_shades[j], label=labels_group[j], linewidth=2, alpha=alpha)
+            if j%2 == 0:
+                base = "-"
+            else:
+                base = "--"
+            plot_function(xdata, data, base+ marker_style, color=colour_shades[j], label=labels_group[j], linewidth=2, alpha=alpha)
             if alphas_step is not None:
                 alpha -= alphas_step
 
