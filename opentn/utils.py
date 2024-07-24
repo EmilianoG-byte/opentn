@@ -142,9 +142,9 @@ def plot_pretty(ydatas:list[list[float]],
             min_value = min(ydata[inset_idx:][-1], min_value)
             max_value = max(ydata[inset_idx:][0], max_value)
             if use_semilogy:
-                ax_inset.semilogy(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_style, color=color_palette[i], label=labels[i], linewidth=2)
+                ax_inset.semilogy(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_styles[i], color=color_palette[i], label=labels[i], linewidth=2)
             else:
-                ax_inset.plot(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_style, color=color_palette[i], label=labels[i], linewidth=2)
+                ax_inset.plot(xdata[inset_idx:], ydata[inset_idx:], '-'+ marker_styles[i], color=color_palette[i], label=labels[i], linewidth=2)
 
         # ax_inset.set_xlim(xdata[inset_x], xdata[-1])
         # ax_inset.set_ylim(min(ydata[inset_y:]), max(ydata[inset_y:]))  # Adjusted y-axis limits
@@ -167,7 +167,7 @@ def plot_pretty(ydatas:list[list[float]],
 
         height_legend = 0.75
     else:
-        height_legend = 0.825
+        height_legend = 0.80
 
     # Add legend with larger font size and place it to the right of the plot
     if legend_out:
